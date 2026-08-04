@@ -150,35 +150,38 @@
                                         <!-- ── BAĞLANTI SAYFASI ─────────────────────────────── -->
                                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                                             <StackPanel Margin="32,28">
-                                                <TextBlock Text="Bağlantı Ayarları"
-                                                           Style="{StaticResource SectionTitle}" FontSize="22"/>
-
-                                                <!-- IP ve Port -->
                                                 <Border Style="{StaticResource CardBorder}">
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*"/>
-                                                            <ColumnDefinition Width="16"/>
-                                                            <ColumnDefinition Width="100"/>
-                                                            <ColumnDefinition Width="16"/>
-                                                            <ColumnDefinition Width="Auto"/>
-                                                        </Grid.ColumnDefinitions>
-                                                        <StackPanel Grid.Column="0">
-                                                            <TextBlock Text="ESP32 IP Adresi" Style="{StaticResource FieldLabel}"/>
-                                                            <TextBox Style="{StaticResource DarkTextBox}"
-                                                                     Text="{Binding EspIp, UpdateSourceTrigger=PropertyChanged}"/>
+                                                    <StackPanel>
+                                                        <TextBlock Text="Cihaz Bağlantısı" Style="{StaticResource SectionTitle}"/>
+                                                        
+                                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                                            <Button Style="{StaticResource AccentButton}"
+                                                                    Content="🔍 Otomatik Cihaz Tara"
+                                                                    Command="{Binding DiscoverDeviceCommand}"
+                                                                    Margin="0,0,12,0"/>
+                                                            <Button Style="{StaticResource DangerButton}"
+                                                                    Content="⚙️ Wi-Fi Sıfırla"
+                                                                    Command="{Binding ResetWifiCommand}"/>
                                                         </StackPanel>
-                                                        <StackPanel Grid.Column="2">
-                                                            <TextBlock Text="UDP Port" Style="{StaticResource FieldLabel}"/>
-                                                            <TextBox Style="{StaticResource DarkTextBox}"
-                                                                     Text="{Binding UdpPort, UpdateSourceTrigger=PropertyChanged}"/>
-                                                        </StackPanel>
-                                                        <Button Grid.Column="4"
-                                                                Style="{StaticResource AccentButton}"
-                                                                Content="Bağlan"
-                                                                Command="{Binding ConnectCommand}"
-                                                                VerticalAlignment="Bottom"/>
-                                                    </Grid>
+
+                                                        <Grid Margin="0,0,0,12">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="16"/>
+                                                                <ColumnDefinition Width="120"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <StackPanel Grid.Column="0">
+                                                                <TextBlock Text="Cihaz IP Adresi / mDNS" Style="{StaticResource FieldLabel}"/>
+                                                                <TextBox Style="{StaticResource DarkTextBox}"
+                                                                         Text="{Binding DeviceIp, UpdateSourceTrigger=PropertyChanged}"/>
+                                                            </StackPanel>
+                                                            <Button Grid.Column="2"
+                                                                    Style="{StaticResource GhostButton}"
+                                                                    Content="🔗 Bağlan"
+                                                                    Command="{Binding ConnectCommand}"
+                                                                    VerticalAlignment="Bottom"/>
+                                                        </Grid>
+                                                    </StackPanel>
                                                 </Border>
 
                                                 <!-- OTA -->

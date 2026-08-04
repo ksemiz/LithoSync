@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
@@ -31,8 +32,9 @@ namespace IoTLedController.ViewModels
         // ── Bağlantı ──────────────────────────────────────────────────────────
         [ObservableProperty] private string _deviceIp = "192.168.1.100";
         [ObservableProperty] private bool   _isConnected;
-        [ObservableProperty] private string _connectionStatus = "Bağlı Değil";
+        [ObservableProperty] private string _connectionStatus = "Cihaz Aranıyor...";
         [ObservableProperty] private string _deviceInfo = "—";
+        [ObservableProperty] private bool   _isSearching;
 
         // ── LED Kontrol ───────────────────────────────────────────────────────
         [ObservableProperty] private int        _currentMode;
@@ -77,10 +79,63 @@ namespace IoTLedController.ViewModels
                 if (CurrentMode == 0) SetGlobalColor(mediaCol);
             };
             Spotify.AuthStatusChanged += s => SpotifyAuth = s;
+
+            // Uygulama açılışında ağı otomatik tara (Otomatik Keşif)
+            Task.Run(() => DiscoverDeviceAsync());
         }
 
         [RelayCommand]
         private void Navigate(string page) => CurrentPage = page;
+
+        [RelayCommand]
+        private async Task DiscoverDeviceAsync()
+        {
+            IsSearching = true;
+            ConnectionStatus = "Ağdaki LithoSync Cihazı Otomatik Otomatik Taranıyor...";
+            try
+            {
+                using var udpClient = new UdpClient();
+                udpClient.EnableBroadcast = true;
+                udpClient.Client.ReceiveTimeout = 2500;
+
+                byte[] discoverPacket = Encoding.UTF8.GetBytes("LITHOSYNC_DISCOVER");
+                var endPoint = new IPEndPoint(IPAddress.Broadcast, 4210);
+                await udpClient.SendAsync(discoverPacket, discoverPacket.Length, endPoint);
+
+                var result = await udpClient.ReceiveAsync();
+                string responseStr = Encoding.UTF8.GetString(result.Buffer);
+
+                using var doc = JsonDocument.Parse(responseStr);
+                if (doc.RootElement.TryGetProperty("ip", out var ipProp))
+                {
+                    string foundIp = ipProp.GetString()!;
+                    DeviceIp = foundIp;
+                    ConnectionStatus = $"Cihaz Bulundu! ({foundIp}) Bağlanılıyor...";
+                    await ConnectAsync();
+                    return;
+                }
+            }
+            catch
+            {
+                // Keşif zaman aşımına uğrarsa mDNS dene
+                try
+                {
+                    DeviceIp = "iot-led.local";
+                    await ConnectAsync();
+                    return;
+                }
+                catch { }
+            }
+            finally
+            {
+                IsSearching = false;
+            }
+
+            if (!IsConnected)
+            {
+                ConnectionStatus = "Otomatik cihaz bulunamadı. IP adresini manuel girin.";
+            }
+        }
 
         [RelayCommand]
         private async Task ConnectAsync()
@@ -109,6 +164,24 @@ namespace IoTLedController.ViewModels
             {
                 IsConnected = false;
                 ConnectionStatus = $"Hata: {ex.Message}";
+            }
+        }
+
+        [RelayCommand]
+        private async Task ResetWifiAsync()
+        {
+            if (!IsConnected) return;
+            var dialogResult = System.Windows.MessageBox.Show(
+                "Wi-Fi ayarları silinip cihaz AP moduna ('IoT-LED-Setup') geçecek.\nEmin misiniz?",
+                "Wi-Fi Sıfırla",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+
+            if (dialogResult == System.Windows.MessageBoxResult.Yes)
+            {
+                await PostJsonAsync("/reset", new { });
+                IsConnected = false;
+                ConnectionStatus = "Wi-Fi Sıfırlandı. Cihaz 'IoT-LED-Setup' ağında başlatılıyor.";
             }
         }
 

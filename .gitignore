@@ -1,0 +1,36 @@
+# ─── PlatformIO ───────────────────────────────────────────────────────────────
+.pio/
+.pioenvs/
+.piolibdeps/
+*.bin
+
+# ─── C# / .NET ────────────────────────────────────────────────────────────────
+bin/
+obj/
+*.user
+*.suo
+*.vs/
+.vs/
+desktop-app/**/*.csproj.user
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.nupkg
+*.snupkg
+packages/
+*.DotSettings.user
+
+# ─── Visual Studio Code ───────────────────────────────────────────────────────
+.vscode/
+*.code-workspace
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Hassas bilgiler ──────────────────────────────────────────────────────────
+appsettings.*.json
+secrets.json
+*.env

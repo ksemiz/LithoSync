@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>IoTLedController</AssemblyName>
+    <RootNamespace>IoTLedController</RootNamespace>
+    <ApplicationIcon>Resources\icon.ico</ApplicationIcon>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Windows Forms için (ekran yakalama GDI+) -->
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MVVM framework -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+    <!-- Ses analizi (WASAPI loopback) -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <!-- Spotify Web API OAuth -->
+    <PackageReference Include="SpotifyAPI.Web" Version="7.1.0" />
+    <!-- Albüm kapağından renk çıkarma -->
+    <PackageReference Include="ColorThief.Standard" Version="1.1.1" />
+    <!-- HTTP client (albüm kapağı indirme) -->
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
+  </ItemGroup>
+
+</Project>

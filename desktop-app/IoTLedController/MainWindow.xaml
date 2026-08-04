@@ -1,0 +1,633 @@
+<Window x:Class="IoTLedController.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:IoTLedController.ViewModels"
+        xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
+        Title="IoT LED Controller"
+        Width="1080" Height="700"
+        MinWidth="900" MinHeight="600"
+        Style="{StaticResource DarkWindowStyle}"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.DataContext>
+        <vm:MainViewModel/>
+    </Window.DataContext>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ═══════════════════════════════════════════════════════════════════
+             SOL NAVİGASYON PANELİ
+        ════════════════════════════════════════════════════════════════════ -->
+        <Border Grid.Column="0" Background="{StaticResource BgPanelBrush}"
+                BorderBrush="{StaticResource BorderBrush_}" BorderThickness="0,0,1,0">
+            <DockPanel>
+
+                <!-- Logo / Başlık -->
+                <StackPanel DockPanel.Dock="Top" Margin="20,28,20,28">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                        <Ellipse Width="10" Height="10" Margin="0,0,8,0">
+                            <Ellipse.Fill>
+                                <RadialGradientBrush>
+                                    <GradientStop Color="{StaticResource AccentGlow}" Offset="0"/>
+                                    <GradientStop Color="{StaticResource Accent}" Offset="1"/>
+                                </RadialGradientBrush>
+                            </Ellipse.Fill>
+                        </Ellipse>
+                        <TextBlock Text="IoT LED" FontSize="18" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                    </StackPanel>
+                    <TextBlock Text="Controller" FontSize="12"
+                               Foreground="{StaticResource TextSecondaryBrush}" Margin="18,0,0,0"/>
+                </StackPanel>
+
+                <!-- Bağlantı durum göstergesi -->
+                <Border DockPanel.Dock="Top" Margin="12,0,12,16"
+                        CornerRadius="8" Padding="12,8">
+                    <Border.Background>
+                        <SolidColorBrush x:Name="connBg" Color="#1A1B2E"/>
+                    </Border.Background>
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse x:Name="connDot" Width="8" Height="8" Margin="0,0,8,0">
+                            <Ellipse.Fill>
+                                <SolidColorBrush x:Name="connDotBrush" Color="#E74C3C"/>
+                            </Ellipse.Fill>
+                        </Ellipse>
+                        <TextBlock Text="{Binding ConnectionStatus}" FontSize="11"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Navigasyon öğeleri -->
+                <StackPanel DockPanel.Dock="Top">
+                    <RadioButton Style="{StaticResource NavButton}"
+                                 IsChecked="True"
+                                 x:Name="NavConnect"
+                                 Command="{Binding NavigateCommand}"
+                                 CommandParameter="Connect">
+                        <TextBlock><Run Text="🔗  Bağlantı"/></TextBlock>
+                    </RadioButton>
+                    <RadioButton Style="{StaticResource NavButton}"
+                                 x:Name="NavLed"
+                                 Command="{Binding NavigateCommand}"
+                                 CommandParameter="Led">
+                        <TextBlock><Run Text="💡  LED Kontrol"/></TextBlock>
+                    </RadioButton>
+                    <RadioButton Style="{StaticResource NavButton}"
+                                 x:Name="NavAmbi"
+                                 Command="{Binding NavigateCommand}"
+                                 CommandParameter="Ambi">
+                        <TextBlock><Run Text="🖥️  AmbiLight"/></TextBlock>
+                    </RadioButton>
+                    <RadioButton Style="{StaticResource NavButton}"
+                                 x:Name="NavAudio"
+                                 Command="{Binding NavigateCommand}"
+                                 CommandParameter="Audio">
+                        <TextBlock><Run Text="🎵  Ses Analizi"/></TextBlock>
+                    </RadioButton>
+                    <RadioButton Style="{StaticResource NavButton}"
+                                 x:Name="NavSpotify"
+                                 Command="{Binding NavigateCommand}"
+                                 CommandParameter="Spotify">
+                        <TextBlock><Run Text="🎧  Spotify"/></TextBlock>
+                    </RadioButton>
+                </StackPanel>
+
+                <!-- Cihaz bilgisi (alt) -->
+                <Border DockPanel.Dock="Bottom" Margin="12,0,12,16"
+                        CornerRadius="8" Background="{StaticResource BgCardBrush}"
+                        BorderBrush="{StaticResource BorderBrush_}" BorderThickness="1"
+                        Padding="12,10">
+                    <StackPanel>
+                        <TextBlock Text="{Binding DeviceInfo}" FontSize="10"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap"/>
+                        <TextBlock Text="ESP32-C3 Super Mini" FontSize="9"
+                                   Foreground="{StaticResource AccentBrush}" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+            </DockPanel>
+        </Border>
+
+        <!-- ═══════════════════════════════════════════════════════════════════
+             ANA İÇERİK ALANI
+        ════════════════════════════════════════════════════════════════════ -->
+        <DockPanel Grid.Column="1">
+
+            <!-- Durum çubuğu (alt) -->
+            <Border DockPanel.Dock="Bottom"
+                    Background="{StaticResource BgPanelBrush}"
+                    BorderBrush="{StaticResource BorderBrush_}" BorderThickness="0,1,0,0"
+                    Padding="20,8">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Right"
+                               Text="{Binding UdpSentPackets, StringFormat='📦 {0} paket'}"
+                               FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding StatusMessage}" FontSize="11"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               VerticalAlignment="Center"/>
+                </DockPanel>
+            </Border>
+
+            <!-- Sayfa içeriği — ContentControl ile sayfa geçişi -->
+            <ContentControl x:Name="PageContent" Margin="0">
+                <ContentControl.Style>
+                    <Style TargetType="ContentControl">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding CurrentPage}" Value="Connect">
+                                <Setter Property="Content">
+                                    <Setter.Value>
+                                        <!-- ── BAĞLANTI SAYFASI ─────────────────────────────── -->
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <StackPanel Margin="32,28">
+                                                <TextBlock Text="Bağlantı Ayarları"
+                                                           Style="{StaticResource SectionTitle}" FontSize="22"/>
+
+                                                <!-- IP ve Port -->
+                                                <Border Style="{StaticResource CardBorder}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="16"/>
+                                                            <ColumnDefinition Width="100"/>
+                                                            <ColumnDefinition Width="16"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel Grid.Column="0">
+                                                            <TextBlock Text="ESP32 IP Adresi" Style="{StaticResource FieldLabel}"/>
+                                                            <TextBox Style="{StaticResource DarkTextBox}"
+                                                                     Text="{Binding EspIp, UpdateSourceTrigger=PropertyChanged}"/>
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="2">
+                                                            <TextBlock Text="UDP Port" Style="{StaticResource FieldLabel}"/>
+                                                            <TextBox Style="{StaticResource DarkTextBox}"
+                                                                     Text="{Binding UdpPort, UpdateSourceTrigger=PropertyChanged}"/>
+                                                        </StackPanel>
+                                                        <Button Grid.Column="4"
+                                                                Style="{StaticResource AccentButton}"
+                                                                Content="Bağlan"
+                                                                Command="{Binding ConnectCommand}"
+                                                                VerticalAlignment="Bottom"/>
+                                                    </Grid>
+                                                </Border>
+
+                                                <!-- OTA -->
+                                                <Border Style="{StaticResource CardBorder}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="OTA Güncelleme" Style="{StaticResource SectionTitle}"/>
+                                                        <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}" FontSize="12">
+                                                            Cihaz GitHub'daki version.json dosyasını kontrol eder.
+                                                            Yeni sürüm varsa .bin dosyasını indirerek OTA ile kendini günceller.
+                                                        </TextBlock>
+                                                        <Button Style="{StaticResource GhostButton}"
+                                                                Content="🔄  Güncelleme Kontrol Et"
+                                                                Command="{Binding CheckUpdateCommand}"
+                                                                HorizontalAlignment="Left"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Setter.Value>
+                                </Setter>
+                            </DataTrigger>
+
+                            <DataTrigger Binding="{Binding CurrentPage}" Value="Led">
+                                <Setter Property="Content">
+                                    <Setter.Value>
+                                        <!-- ── LED KONTROL SAYFASI ──────────────────────────── -->
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <StackPanel Margin="32,28">
+                                                <TextBlock Text="LED Kontrol"
+                                                           Style="{StaticResource SectionTitle}" FontSize="22"/>
+
+                                                <!-- Mod seçici -->
+                                                <Border Style="{StaticResource CardBorder}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="LED Modu" Style="{StaticResource SectionTitle}"/>
+                                                        <WrapPanel>
+                                                            <RadioButton Style="{StaticResource ModeRadioButton}"
+                                                                         GroupName="LedMode" Content="🔲 Statik"
+                                                                         IsChecked="{Binding IsMode0}"
+                                                                         Command="{Binding SetModeCommand}"/>
+                                                            <RadioButton Style="{StaticResource ModeRadioButton}"
+                                                                         GroupName="LedMode" Content="⚡ Knight Rider"
+                                                                         IsChecked="{Binding IsMode1}"
+                                                                         Command="{Binding SetModeCommand}"/>
+                                                            <RadioButton Style="{StaticResource ModeRadioButton}"
+                                                                         GroupName="LedMode" Content="🌩️ Şimşek"
+                                                                         IsChecked="{Binding IsMode2}"
+                                                                         Command="{Binding SetModeCommand}"/>
+                                                            <RadioButton Style="{StaticResource ModeRadioButton}"
+                                                                         GroupName="LedMode" Content="📡 UDP / Ambi"
+                                                                         IsChecked="{Binding IsMode3}"
+                                                                         Command="{Binding SetModeCommand}"/>
+                                                        </WrapPanel>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <!-- Parlaklık -->
+                                                <Border Style="{StaticResource CardBorder}">
+                                                    <StackPanel>
+                                                        <DockPanel Margin="0,0,0,8">
+                                                            <TextBlock Text="Parlaklık" Style="{StaticResource SectionTitle}"
+                                                                       Margin="0"/>
+                                                            <TextBlock DockPanel.Dock="Right"
+                                                                       Text="{Binding Brightness}"
+                                                                       Foreground="{StaticResource AccentBrush}"
+                                                                       FontWeight="Bold" VerticalAlignment="Center"/>
+                                                        </DockPanel>
+                                                        <Slider Style="{StaticResource DarkSlider}"
+                                                                Minimum="0" Maximum="255"
+                                                                Value="{Binding Brightness}"
+                                                                TickFrequency="1" IsSnapToTickEnabled="True"/>
+                                                        <Button Style="{StaticResource GhostButton}"
+                                                                Content="Uygula"
+                                                                Command="{Binding SetBrightnessCommand}"
+                                                                HorizontalAlignment="Left" Margin="0,10,0,0"/>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <!-- Global renk -->
+                                                <Border Style="{StaticResource CardBorder}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="Global Renk (Tüm LED'ler)"
+                                                                   Style="{StaticResource SectionTitle}"/>
+                                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                            <Border Width="40" Height="40" CornerRadius="8" Margin="0,0,12,0">
+                                                                <Border.Background>
+                                                                    <SolidColorBrush Color="{Binding GlobalColor}"/>
+                                                                </Border.Background>
+                                                            </Border>
+                                                            <Button Style="{StaticResource AccentButton}"
+                                                                    Content="Renk Seç &amp; Uygula"
+                                                                    Command="{Binding PickAndSetGlobalColorCommand}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <!-- Bireysel LED renkleri -->
+                                                <Border Style="{StaticResource CardBorder}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="Bireysel LED Renkleri"
+                                                                   Style="{StaticResource SectionTitle}"/>
+                                                        <ItemsControl ItemsSource="{Binding LedColors}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <WrapPanel/>
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border CornerRadius="10"
+                                                                            Background="{StaticResource BgDeepBrush}"
+                                                                            BorderBrush="{StaticResource BorderBrush_}"
+                                                                            BorderThickness="1"
+                                                                            Padding="12" Margin="0,0,10,10"
+                                                                            Width="100">
+                                                                        <StackPanel>
+                                                                            <TextBlock Text="{Binding Label}"
+                                                                                       FontSize="11"
+                                                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                                                       HorizontalAlignment="Center"
+                                                                                       Margin="0,0,0,8"/>
+                                                                            <Ellipse Width="36" Height="36"
+                                                                                     HorizontalAlignment="Center"
+                                                                                     Margin="0,0,0,8">
+                                                                                <Ellipse.Fill>
+                                                                                    <SolidColorBrush Color="{Binding Color}"/>
+                                                                                </Ellipse.Fill>
+                                                                                <Ellipse.Effect>
+                                                                                    <BlurEffect Radius="4"/>
+                                                                                </Ellipse.Effect>
+                                                                            </Ellipse>
+                                                                            <Button Content="Seç"
+                                                                                    Style="{StaticResource GhostButton}"
+                                                                                    FontSize="10" Padding="4,4"
+                                                                                    Command="{Binding DataContext.PickAndSetLedColorCommand,
+                                                                                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                                    CommandParameter="{Binding}"/>
+                                                                        </StackPanel>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Setter.Value>
+                                </Setter>
+                            </DataTrigger>
+
+                            <DataTrigger Binding="{Binding CurrentPage}" Value="Ambi">
+                                <Setter Property="Content">
+                                    <Setter.Value>
+                                        <!-- ── AMBİLIGHT SAYFASI ────────────────────────────── -->
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <StackPanel Margin="32,28">
+                                                <TextBlock Text="AmbiLight" Style="{StaticResource SectionTitle}" FontSize="22"/>
+
+                                                <Border Style="{StaticResource CardBorder}">
+                                                    <StackPanel>
+                                                        <TextBlock Style="{StaticResource SectionTitle}" Text="Ekran Renk Analizi"/>
+                                                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,0,0,16"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}">
+                                                            Ekranın alt bölümünü analiz ederek 6 renk bölgesini UDP üzerinden
+                                                            ESP32'ye gönderir. ESP32'nin Mod 3 (UDP) modunda olması gerekir.
+                                                        </TextBlock>
+
+                                                        <!-- FPS ayarı -->
+                                                        <StackPanel Margin="0,0,0,16">
+                                                            <DockPanel Margin="0,0,0,6">
+                                                                <TextBlock Text="Hedef FPS" Style="{StaticResource FieldLabel}" Margin="0"/>
+                                                                <TextBlock DockPanel.Dock="Right"
+                                                                           Text="{Binding AmbiTargetFps, StringFormat='{}{0} FPS'}"
+                                                                           Foreground="{StaticResource AccentBrush}" FontWeight="Bold"/>
+                                                            </DockPanel>
+                                                            <Slider Style="{StaticResource DarkSlider}"
+                                                                    Minimum="1" Maximum="60"
+                                                                    Value="{Binding AmbiTargetFps}"
+                                                                    TickFrequency="1" IsSnapToTickEnabled="True"/>
+                                                        </StackPanel>
+
+                                                        <!-- Başlat/Durdur -->
+                                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                                                            <Button Command="{Binding ToggleAmbiLightCommand}"
+                                                                    Margin="0,0,12,0" Width="140">
+                                                                <Button.Style>
+                                                                    <Style TargetType="Button" BasedOn="{StaticResource SuccessButton}">
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding AmbiRunning}" Value="True">
+                                                                                <Setter Property="Style" Value="{StaticResource DangerButton}"/>
+                                                                                <Setter Property="Content" Value="⏹  Durdur"/>
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding AmbiRunning}" Value="False">
+                                                                                <Setter Property="Content" Value="▶  Başlat"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Button.Style>
+                                                            </Button>
+                                                            <Border CornerRadius="8" Padding="12,8"
+                                                                    Background="{StaticResource BgDeepBrush}"
+                                                                    VerticalAlignment="Center">
+                                                                <TextBlock Foreground="{StaticResource AccentBrush}" FontWeight="Bold">
+                                                                    <Run Text="⚡ "/>
+                                                                    <Run Text="{Binding AmbiFps, StringFormat='{}{0:F1} FPS'}"/>
+                                                                </TextBlock>
+                                                            </Border>
+                                                        </StackPanel>
+
+                                                        <!-- Canlı renk önizlemesi -->
+                                                        <TextBlock Text="Canlı Önizleme" Style="{StaticResource FieldLabel}"/>
+                                                        <ItemsControl ItemsSource="{Binding AmbiColors}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <UniformGrid Rows="1"/>
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border Height="60" Margin="2" CornerRadius="8">
+                                                                        <Border.Background>
+                                                                            <SolidColorBrush Color="{Binding}"/>
+                                                                        </Border.Background>
+                                                                        <Border.Effect>
+                                                                            <BlurEffect Radius="0"/>
+                                                                        </Border.Effect>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Setter.Value>
+                                </Setter>
+                            </DataTrigger>
+
+                            <DataTrigger Binding="{Binding CurrentPage}" Value="Audio">
+                                <Setter Property="Content">
+                                    <Setter.Value>
+                                        <!-- ── SES ANALİZİ SAYFASI ─────────────────────────── -->
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <StackPanel Margin="32,28">
+                                                <TextBlock Text="Ses Analizi (NAudio)" Style="{StaticResource SectionTitle}" FontSize="22"/>
+
+                                                <Border Style="{StaticResource CardBorder}">
+                                                    <StackPanel>
+                                                        <TextBlock Style="{StaticResource SectionTitle}" Text="WASAPI Loopback FFT"/>
+                                                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,0,0,16"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}">
+                                                            Sistem ses çıkışını gerçek zamanlı analiz ederek frekans bantlarını
+                                                            renk haritasına çevirir. Bass=Kırmızı, Mid=Yeşil, Treble=Mavi.
+                                                        </TextBlock>
+
+                                                        <!-- Gain -->
+                                                        <StackPanel Margin="0,0,0,12">
+                                                            <DockPanel Margin="0,0,0,6">
+                                                                <TextBlock Text="Amplifikasyon (Gain)" Style="{StaticResource FieldLabel}" Margin="0"/>
+                                                                <TextBlock DockPanel.Dock="Right"
+                                                                           Text="{Binding AudioGain, StringFormat='×{0:F1}'}"
+                                                                           Foreground="{StaticResource AccentBrush}" FontWeight="Bold"/>
+                                                            </DockPanel>
+                                                            <Slider Style="{StaticResource DarkSlider}"
+                                                                    Minimum="0.5" Maximum="10" TickFrequency="0.1"
+                                                                    Value="{Binding AudioGain}"/>
+                                                        </StackPanel>
+
+                                                        <!-- Smoothing -->
+                                                        <StackPanel Margin="0,0,0,20">
+                                                            <DockPanel Margin="0,0,0,6">
+                                                                <TextBlock Text="Yumuşatma (Smoothing)" Style="{StaticResource FieldLabel}" Margin="0"/>
+                                                                <TextBlock DockPanel.Dock="Right"
+                                                                           Text="{Binding AudioSmoothing, StringFormat='{}{0:P0}'}"
+                                                                           Foreground="{StaticResource AccentBrush}" FontWeight="Bold"/>
+                                                            </DockPanel>
+                                                            <Slider Style="{StaticResource DarkSlider}"
+                                                                    Minimum="0" Maximum="0.95" TickFrequency="0.01"
+                                                                    Value="{Binding AudioSmoothing}"/>
+                                                        </StackPanel>
+
+                                                        <!-- Başlat/Durdur -->
+                                                        <Button Command="{Binding ToggleAudioCommand}"
+                                                                HorizontalAlignment="Left" Width="140" Margin="0,0,0,20">
+                                                            <Button.Style>
+                                                                <Style TargetType="Button" BasedOn="{StaticResource SuccessButton}">
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding AudioRunning}" Value="True">
+                                                                            <Setter Property="Content" Value="⏹  Durdur"/>
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding AudioRunning}" Value="False">
+                                                                            <Setter Property="Content" Value="▶  Başlat"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Button.Style>
+                                                        </Button>
+
+                                                        <!-- Renk çubuğu görselleştirici -->
+                                                        <TextBlock Text="Frekans → Renk Görselleştirici" Style="{StaticResource FieldLabel}"/>
+                                                        <Grid Margin="0,4,0,0">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition/><ColumnDefinition/>
+                                                                <ColumnDefinition/><ColumnDefinition/>
+                                                                <ColumnDefinition/><ColumnDefinition/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <Border Grid.Column="0" Height="80" Margin="2" CornerRadius="6">
+                                                                <Border.Background><SolidColorBrush Color="{Binding AudioColors[0]}"/></Border.Background>
+                                                            </Border>
+                                                            <Border Grid.Column="1" Height="80" Margin="2" CornerRadius="6">
+                                                                <Border.Background><SolidColorBrush Color="{Binding AudioColors[1]}"/></Border.Background>
+                                                            </Border>
+                                                            <Border Grid.Column="2" Height="80" Margin="2" CornerRadius="6">
+                                                                <Border.Background><SolidColorBrush Color="{Binding AudioColors[2]}"/></Border.Background>
+                                                            </Border>
+                                                            <Border Grid.Column="3" Height="80" Margin="2" CornerRadius="6">
+                                                                <Border.Background><SolidColorBrush Color="{Binding AudioColors[3]}"/></Border.Background>
+                                                            </Border>
+                                                            <Border Grid.Column="4" Height="80" Margin="2" CornerRadius="6">
+                                                                <Border.Background><SolidColorBrush Color="{Binding AudioColors[4]}"/></Border.Background>
+                                                            </Border>
+                                                            <Border Grid.Column="5" Height="80" Margin="2" CornerRadius="6">
+                                                                <Border.Background><SolidColorBrush Color="{Binding AudioColors[5]}"/></Border.Background>
+                                                            </Border>
+                                                        </Grid>
+                                                        <Grid Margin="0,4,0,0">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition/><ColumnDefinition/>
+                                                                <ColumnDefinition/><ColumnDefinition/>
+                                                                <ColumnDefinition/><ColumnDefinition/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0" Text="Sub-bass" FontSize="9"
+                                                                       HorizontalAlignment="Center"
+                                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                            <TextBlock Grid.Column="1" Text="Bass" FontSize="9"
+                                                                       HorizontalAlignment="Center"
+                                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                            <TextBlock Grid.Column="2" Text="Low-mid" FontSize="9"
+                                                                       HorizontalAlignment="Center"
+                                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                            <TextBlock Grid.Column="3" Text="Mid" FontSize="9"
+                                                                       HorizontalAlignment="Center"
+                                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                            <TextBlock Grid.Column="4" Text="High-mid" FontSize="9"
+                                                                       HorizontalAlignment="Center"
+                                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                            <TextBlock Grid.Column="5" Text="Treble" FontSize="9"
+                                                                       HorizontalAlignment="Center"
+                                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                        </Grid>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Setter.Value>
+                                </Setter>
+                            </DataTrigger>
+
+                            <DataTrigger Binding="{Binding CurrentPage}" Value="Spotify">
+                                <Setter Property="Content">
+                                    <Setter.Value>
+                                        <!-- ── SPOTIFY SAYFASI ──────────────────────────────── -->
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <StackPanel Margin="32,28">
+                                                <TextBlock Text="Spotify Ambiyans" Style="{StaticResource SectionTitle}" FontSize="22"/>
+
+                                                <!-- Kimlik Bilgileri -->
+                                                <Border Style="{StaticResource CardBorder}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="Spotify Developer Ayarları"
+                                                                   Style="{StaticResource SectionTitle}"/>
+                                                        <TextBlock Text="Spotify Client ID" Style="{StaticResource FieldLabel}"/>
+                                                        <TextBox Style="{StaticResource DarkTextBox}"
+                                                                 Text="{Binding SpotifyClientId, UpdateSourceTrigger=PropertyChanged}"
+                                                                 Margin="0,0,0,12"/>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Button Style="{StaticResource AccentButton}"
+                                                                    Content="🔐  Spotify Giriş"
+                                                                    Command="{Binding SpotifyAuthCommand}"
+                                                                    Margin="0,0,12,0"/>
+                                                            <TextBlock Text="✓ Bağlandı" VerticalAlignment="Center"
+                                                                       Foreground="{StaticResource SuccessBrush}"
+                                                                       FontWeight="Bold" FontSize="12"
+                                                                       Visibility="{Binding SpotifyAuthenticated,
+                                                                           Converter={x:Static BooleanToVisibilityConverter}}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <!-- Aktif şarkı ve kontrol -->
+                                                <Border Style="{StaticResource CardBorder}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="Şu An Çalıyor"
+                                                                   Style="{StaticResource SectionTitle}"/>
+                                                        <TextBlock Text="{Binding CurrentTrackTitle}"
+                                                                   FontSize="16" FontWeight="Bold"
+                                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                                   Margin="0,0,0,4"/>
+                                                        <TextBlock Text="{Binding CurrentTrackArtist}"
+                                                                   FontSize="12"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                                   Margin="0,0,0,16"/>
+
+                                                        <!-- Albüm renk paleti önizlemesi -->
+                                                        <TextBlock Text="Albüm Renk Paleti" Style="{StaticResource FieldLabel}"/>
+                                                        <ItemsControl ItemsSource="{Binding SpotifyColors}" Margin="0,4,0,16">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <UniformGrid Rows="1"/>
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border Height="50" Margin="2" CornerRadius="8">
+                                                                        <Border.Background>
+                                                                            <SolidColorBrush Color="{Binding}"/>
+                                                                        </Border.Background>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+
+                                                        <Button Command="{Binding ToggleSpotifyCommand}"
+                                                                HorizontalAlignment="Left" Width="160">
+                                                            <Button.Style>
+                                                                <Style TargetType="Button" BasedOn="{StaticResource SuccessButton}">
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding SpotifyRunning}" Value="True">
+                                                                            <Setter Property="Content" Value="⏹  Durdur"/>
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding SpotifyRunning}" Value="False">
+                                                                            <Setter Property="Content" Value="🎵  Başlat"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Button.Style>
+                                                        </Button>
+
+                                                        <TextBlock Text="{Binding SpotifyStatus}"
+                                                                   Margin="0,12,0,0" FontSize="11"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Setter.Value>
+                                </Setter>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ContentControl.Style>
+            </ContentControl>
+        </DockPanel>
+    </Grid>
+</Window>

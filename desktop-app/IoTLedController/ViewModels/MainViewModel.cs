@@ -2,8 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Drawing;
 using System.Drawing.Imaging;
-using System.IO;
-using System.Linq;
+using System.Numerics;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -25,8 +24,10 @@ namespace IoTLedController.ViewModels
         private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(3) };
         private UdpClient? _udp;
         private CancellationTokenSource? _ambiCts;
-        private CancellationTokenSource? _audioCts;
         private WasapiLoopbackCapture? _audioCapture;
+
+        // Ses smoothing için önceki değerler
+        private readonly float[] _smoothedBands = new float[6];
 
         // ── Navigasyon ────────────────────────────────────────────────────────
         [ObservableProperty] private string _currentPage = "Connect";
@@ -39,7 +40,28 @@ namespace IoTLedController.ViewModels
         [ObservableProperty] private bool   _isSearching;
 
         // ── LED Kontrol ───────────────────────────────────────────────────────
-        [ObservableProperty] private int        _currentMode;
+        private int _currentMode;
+        public int CurrentMode
+        {
+            get => _currentMode;
+            set
+            {
+                if (SetProperty(ref _currentMode, value))
+                {
+                    OnPropertyChanged(nameof(IsMode0));
+                    OnPropertyChanged(nameof(IsMode1));
+                    OnPropertyChanged(nameof(IsMode2));
+                    OnPropertyChanged(nameof(IsMode3));
+                }
+            }
+        }
+
+        // RadioButton IsChecked bağlantıları
+        public bool IsMode0 { get => CurrentMode == 0; set { if (value) SetModeCommand.Execute("0"); } }
+        public bool IsMode1 { get => CurrentMode == 1; set { if (value) SetModeCommand.Execute("1"); } }
+        public bool IsMode2 { get => CurrentMode == 2; set { if (value) SetModeCommand.Execute("2"); } }
+        public bool IsMode3 { get => CurrentMode == 3; set { if (value) SetModeCommand.Execute("3"); } }
+
         [ObservableProperty] private byte       _brightness = 200;
         [ObservableProperty] private MediaColor _globalColor = MediaColor.FromRgb(255, 100, 0);
 
@@ -53,8 +75,8 @@ namespace IoTLedController.ViewModels
 
         // ── Ses Analizi ───────────────────────────────────────────────────────
         [ObservableProperty] private bool   _audioRunning;
-        [ObservableProperty] private double _audioGain = 2.5;
-        [ObservableProperty] private double _audioSmoothing = 0.5;
+        [ObservableProperty] private double _audioGain = 3.0;
+        [ObservableProperty] private double _audioSmoothing = 0.6;
         public ObservableCollection<MediaColor> AudioColors { get; } = new();
 
         // ── Spotify ───────────────────────────────────────────────────────────
@@ -82,7 +104,7 @@ namespace IoTLedController.ViewModels
             };
             Spotify.AuthStatusChanged += s => SpotifyAuth = s;
 
-            // Otomatik Keşif
+            // Uygulama açılışında ağı otomatik tara
             Task.Run(() => DiscoverDeviceAsync());
         }
 
@@ -99,43 +121,26 @@ namespace IoTLedController.ViewModels
                 using var udpClient = new UdpClient();
                 udpClient.EnableBroadcast = true;
                 udpClient.Client.ReceiveTimeout = 2500;
-
                 byte[] discoverPacket = Encoding.UTF8.GetBytes("LITHOSYNC_DISCOVER");
-                var endPoint = new IPEndPoint(IPAddress.Broadcast, 4210);
-                await udpClient.SendAsync(discoverPacket, discoverPacket.Length, endPoint);
-
+                await udpClient.SendAsync(discoverPacket, discoverPacket.Length, new IPEndPoint(IPAddress.Broadcast, 4210));
                 var result = await udpClient.ReceiveAsync();
                 string responseStr = Encoding.UTF8.GetString(result.Buffer);
-
                 using var doc = JsonDocument.Parse(responseStr);
                 if (doc.RootElement.TryGetProperty("ip", out var ipProp))
                 {
-                    string foundIp = ipProp.GetString()!;
-                    DeviceIp = foundIp;
-                    ConnectionStatus = $"Cihaz Bulundu! ({foundIp}) Bağlanılıyor...";
+                    DeviceIp = ipProp.GetString()!;
+                    ConnectionStatus = $"Cihaz Bulundu! ({DeviceIp}) Bağlanılıyor...";
                     await ConnectAsync();
                     return;
                 }
             }
             catch
             {
-                try
-                {
-                    DeviceIp = "iot-led.local";
-                    await ConnectAsync();
-                    return;
-                }
+                try { DeviceIp = "iot-led.local"; await ConnectAsync(); return; }
                 catch { }
             }
-            finally
-            {
-                IsSearching = false;
-            }
-
-            if (!IsConnected)
-            {
-                ConnectionStatus = "Otomatik cihaz bulunamadı. IP adresini manuel girin.";
-            }
+            finally { IsSearching = false; }
+            if (!IsConnected) ConnectionStatus = "Otomatik cihaz bulunamadı. IP adresini manuel girin.";
         }
 
         [RelayCommand]
@@ -147,16 +152,13 @@ namespace IoTLedController.ViewModels
                 var res = await _http.GetStringAsync($"http://{DeviceIp}/status");
                 using var doc = JsonDocument.Parse(res);
                 var root = doc.RootElement;
-
                 IsConnected = root.GetProperty("ok").GetBoolean();
                 CurrentMode = root.GetProperty("mode").GetInt32();
                 Brightness  = (byte)root.GetProperty("brightness").GetInt32();
-
                 var mac = root.TryGetProperty("mac", out var m) ? m.GetString() : "?";
                 var ver = root.TryGetProperty("version", out var v) ? v.GetString() : "?";
                 DeviceInfo = $"MAC: {mac} | Ver: {ver}";
                 ConnectionStatus = $"Bağlandı ({DeviceIp})";
-
                 _udp?.Close();
                 _udp = new UdpClient();
                 _udp.Connect(DeviceIp, 4210);
@@ -172,13 +174,10 @@ namespace IoTLedController.ViewModels
         private async Task ResetWifiAsync()
         {
             if (!IsConnected) return;
-            var dialogResult = System.Windows.MessageBox.Show(
-                "Wi-Fi ayarları silinip cihaz AP moduna ('IoT-LED-Setup') geçecek.\nEmin misiniz?",
-                "Wi-Fi Sıfırla",
-                System.Windows.MessageBoxButton.YesNo,
-                System.Windows.MessageBoxImage.Warning);
-
-            if (dialogResult == System.Windows.MessageBoxResult.Yes)
+            var r = System.Windows.MessageBox.Show(
+                "Wi-Fi ayarları silinip cihaz AP moduna geçecek. Emin misiniz?",
+                "Wi-Fi Sıfırla", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+            if (r == System.Windows.MessageBoxResult.Yes)
             {
                 await PostJsonAsync("/reset", new { });
                 IsConnected = false;
@@ -186,14 +185,13 @@ namespace IoTLedController.ViewModels
             }
         }
 
+        // ── LED Mod Seçimi (RadioButton'lardan çağrılır) ──────────────────────
         [RelayCommand]
         private async Task SetModeAsync(string modeStr)
         {
-            if (int.TryParse(modeStr, out int m))
-            {
-                CurrentMode = m;
-                await PostJsonAsync("/setMode", new { mode = m });
-            }
+            if (!int.TryParse(modeStr, out int m)) return;
+            CurrentMode = m;
+            await PostJsonAsync("/setMode", new { mode = m });
         }
 
         [RelayCommand]
@@ -207,10 +205,7 @@ namespace IoTLedController.ViewModels
         {
             using var dlg = new ColorDialog();
             if (dlg.ShowDialog() == DialogResult.OK)
-            {
-                var c = MediaColor.FromRgb(dlg.Color.R, dlg.Color.G, dlg.Color.B);
-                SetGlobalColor(c);
-            }
+                SetGlobalColor(MediaColor.FromRgb(dlg.Color.R, dlg.Color.G, dlg.Color.B));
         }
 
         public async void SetGlobalColor(MediaColor c)
@@ -231,7 +226,7 @@ namespace IoTLedController.ViewModels
             }
         }
 
-        // ── AMBILIGHT (EKRAN OKUMA) ───────────────────────────────────────────
+        // ── AMBILIGHT — Ekranın 4 Kenarından Örnekleme ───────────────────────
         [RelayCommand]
         private async Task ToggleAmbiLightAsync()
         {
@@ -243,9 +238,9 @@ namespace IoTLedController.ViewModels
             else
             {
                 AmbiRunning = true;
-                await SetModeAsync("3"); // ESP32'yi UDP Moduna geçir
+                await SetModeAsync("3");
                 _ambiCts = new CancellationTokenSource();
-                Task.Run(() => RunAmbiLoopAsync(_ambiCts.Token));
+                _ = Task.Run(() => RunAmbiLoopAsync(_ambiCts.Token));
             }
         }
 
@@ -253,141 +248,148 @@ namespace IoTLedController.ViewModels
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             int frames = 0;
-
             while (!ct.IsCancellationRequested)
             {
                 int delayMs = 1000 / Math.Max(1, AmbiTargetFps);
-                byte[] packet = CaptureBottomScreenColors();
-
+                byte[] packet = CaptureEdgeColors();
                 if (_udp != null && packet.Length == 18)
-                {
                     try { await _udp.SendAsync(packet, packet.Length); } catch { }
-                }
 
                 for (int i = 0; i < 6; i++)
                 {
-                    int idx = i * 3;
-                    var c = MediaColor.FromRgb(packet[idx], packet[idx + 1], packet[idx + 2]);
-                    int capturedI = i;
-                    System.Windows.Application.Current?.Dispatcher.InvokeAsync(() => AmbiColors[capturedI] = c);
+                    var c = MediaColor.FromRgb(packet[i * 3], packet[i * 3 + 1], packet[i * 3 + 2]);
+                    int ci = i;
+                    System.Windows.Application.Current?.Dispatcher.InvokeAsync(() => AmbiColors[ci] = c);
                 }
-
                 frames++;
                 if (sw.ElapsedMilliseconds >= 1000)
                 {
                     AmbiFps = frames * 1000.0 / sw.ElapsedMilliseconds;
-                    frames = 0;
-                    sw.Restart();
+                    frames = 0; sw.Restart();
                 }
-
                 await Task.Delay(delayMs, ct);
             }
         }
 
-        private byte[] CaptureBottomScreenColors()
+        /// <summary>
+        /// Ekranın alt kenarını 6 bölgeye bölerek ortalama renk çeker.
+        /// Ek olarak gamma 0.6 düzeltmesi uygulanır → canlı, parlak renkler.
+        /// </summary>
+        private byte[] CaptureEdgeColors()
         {
             byte[] buf = new byte[18];
             try
             {
-                var bounds = Screen.PrimaryScreen.Bounds;
-                int h = Math.Max(10, bounds.Height / 5);
-                int y = bounds.Height - h;
+                var b = Screen.PrimaryScreen!.Bounds;
+                int stripH = Math.Max(8, b.Height / 8); // Alt %12.5
+                int y = b.Height - stripH;
 
-                using var bmp = new Bitmap(bounds.Width, h, PixelFormat.Format24bppRgb);
+                using var bmp = new Bitmap(b.Width, stripH, PixelFormat.Format32bppArgb);
                 using (var g = Graphics.FromImage(bmp))
-                {
-                    g.CopyFromScreen(bounds.X, y, 0, 0, new Size(bounds.Width, h));
-                }
+                    g.CopyFromScreen(b.X, y, 0, 0, new Size(b.Width, stripH));
 
-                int zoneW = bounds.Width / 6;
-                for (int z = 0; z < 6; z++)
-                {
-                    long r = 0, g = 0, b = 0;
-                    int count = 0;
+                // Hızlı unsafe piksel erişimi
+                var data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, stripH),
+                    ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                int stride = data.Stride;
 
-                    for (int px = z * zoneW; px < (z + 1) * zoneW; px += 15)
+                unsafe
+                {
+                    byte* ptr = (byte*)data.Scan0;
+                    int zoneW = b.Width / 6;
+                    for (int z = 0; z < 6; z++)
                     {
-                        for (int py = 0; py < h; py += 15)
+                        long r = 0, g2 = 0, blue = 0;
+                        int count = 0;
+                        int xStart = z * zoneW;
+                        int xEnd = xStart + zoneW;
+                        for (int px = xStart; px < xEnd; px += 12)
                         {
-                            var c = bmp.GetPixel(px, py);
-                            r += c.R; g += c.G; b += c.B;
-                            count++;
+                            for (int py = 0; py < stripH; py += 8)
+                            {
+                                byte* p = ptr + py * stride + px * 4;
+                                blue += p[0]; g2 += p[1]; r += p[2];
+                                count++;
+                            }
+                        }
+                        if (count > 0)
+                        {
+                            // Gamma 0.55 düzeltmesi: canlılaştır
+                            buf[z * 3]     = GammaCorrect((double)r / count);
+                            buf[z * 3 + 1] = GammaCorrect((double)g2 / count);
+                            buf[z * 3 + 2] = GammaCorrect((double)blue / count);
                         }
                     }
-
-                    if (count > 0)
-                    {
-                        buf[z * 3]     = (byte)(r / count);
-                        buf[z * 3 + 1] = (byte)(g / count);
-                        buf[z * 3 + 2] = (byte)(b / count);
-                    }
                 }
+                bmp.UnlockBits(data);
             }
             catch { }
-
             return buf;
         }
 
-        // ── GERÇEK NAUDIO SES ANALİZİ (WASAPI LOOPBACK) ──────────────────────
+        private static byte GammaCorrect(double v)
+        {
+            double norm = v / 255.0;
+            return (byte)(Math.Pow(norm, 0.55) * 255.0);
+        }
+
+        // ── GERÇEK SES ANALİZİ — NAudio WASAPI + FFT Frekans Bantları ────────
         [RelayCommand]
         private async Task ToggleAudioAsync()
         {
             if (AudioRunning)
             {
                 AudioRunning = false;
-                try
-                {
-                    _audioCapture?.StopRecording();
-                    _audioCapture?.Dispose();
-                    _audioCapture = null;
-                }
+                try { _audioCapture?.StopRecording(); _audioCapture?.Dispose(); _audioCapture = null; }
                 catch { }
             }
             else
             {
                 AudioRunning = true;
-                await SetModeAsync("3"); // ESP32'yi UDP Moduna geçir
-                StartWasapiAudioCapture();
+                await SetModeAsync("3");
+                StartWasapiCapture();
             }
         }
 
-        private void StartWasapiAudioCapture()
+        private void StartWasapiCapture()
         {
             try
             {
                 _audioCapture = new WasapiLoopbackCapture();
+                int sampleRate = _audioCapture.WaveFormat.SampleRate;
+                int channels   = _audioCapture.WaveFormat.Channels;
+
+                // FFT buffer — 2048 örneklik pencere
+                const int FFT_SIZE = 2048;
+                float[] fftBuffer = new float[FFT_SIZE];
+                int fftPos = 0;
+
                 _audioCapture.DataAvailable += (s, e) =>
                 {
                     if (!AudioRunning) return;
 
-                    float maxVol = 0;
+                    // 32-bit float örnekleri al
                     int sampleCount = e.BytesRecorded / 4;
-                    for (int i = 0; i < e.BytesRecorded; i += 4)
+                    for (int i = 0; i < sampleCount; i++)
                     {
-                        float sample = BitConverter.ToSingle(e.Buffer, i);
-                        maxVol = Math.Max(maxVol, Math.Abs(sample));
-                    }
+                        float sample = BitConverter.ToSingle(e.Buffer, i * 4);
+                        // Stereo ise ortalama al
+                        if (channels == 2 && i % 2 == 1)
+                        {
+                            fftBuffer[fftPos] = (fftBuffer[fftPos] + sample) * 0.5f;
+                            fftPos++;
+                        }
+                        else
+                        {
+                            fftBuffer[fftPos % FFT_SIZE] = sample;
+                            if (channels == 1) fftPos++;
+                        }
 
-                    float volume = Math.Min(1.0f, maxVol * (float)AudioGain);
-                    byte r = (byte)(volume * 255);
-                    byte g = (byte)(volume * 180);
-                    byte b = (byte)((1.0f - volume) * 255);
-
-                    byte[] packet = new byte[18];
-                    for (int i = 0; i < 6; i++)
-                    {
-                        packet[i * 3]     = r;
-                        packet[i * 3 + 1] = g;
-                        packet[i * 3 + 2] = b;
-
-                        var c = MediaColor.FromRgb(r, g, b);
-                        int capI = i;
-                        System.Windows.Application.Current?.Dispatcher.InvokeAsync(() => AudioColors[capI] = c);
-                    }
-
-                    if (_udp != null)
-                    {
-                        try { _udp.Send(packet, packet.Length); } catch { }
+                        if (fftPos >= FFT_SIZE)
+                        {
+                            ProcessFft(fftBuffer, sampleRate);
+                            fftPos = 0;
+                        }
                     }
                 };
 
@@ -396,7 +398,105 @@ namespace IoTLedController.ViewModels
             catch (Exception ex)
             {
                 AudioRunning = false;
-                System.Windows.MessageBox.Show($"Ses yakalama başlatılamadı: {ex.Message}");
+                System.Windows.Application.Current?.Dispatcher.InvokeAsync(() =>
+                    System.Windows.MessageBox.Show($"Ses yakalama başlatılamadı:\n{ex.Message}", "Hata"));
+            }
+        }
+
+        private void ProcessFft(float[] samples, int sampleRate)
+        {
+            // Hann penceresi uygula
+            var complex = new Complex[samples.Length];
+            for (int i = 0; i < samples.Length; i++)
+            {
+                double hann = 0.5 * (1 - Math.Cos(2 * Math.PI * i / (samples.Length - 1)));
+                complex[i] = new Complex(samples[i] * hann, 0);
+            }
+
+            // FFT
+            FftInPlace(complex);
+
+            int binCount = complex.Length / 2;
+            double binHz = (double)sampleRate / complex.Length;
+
+            // 6 frekans bandı (Hz aralıkları) — Sub-bass → Treble
+            (double lo, double hi, (byte r, byte g, byte b) baseColor)[] bands =
+            {
+                (20,   80,   (220,  20, 60)),   // Sub-bass → Kırmızı
+                (80,   250,  (255, 80,  0)),    // Bass → Turuncu
+                (250,  800,  (255,220,  0)),    // Low-mid → Sarı
+                (800,  2500, (0,  200, 80)),    // Mid → Yeşil
+                (2500, 6000, (0,  120,255)),    // High-mid → Mavi
+                (6000, 20000,(160, 32,240)),    // Treble → Mor
+            };
+
+            float smoothing = (float)AudioSmoothing;
+            float gain = (float)AudioGain;
+
+            byte[] packet = new byte[18];
+            for (int z = 0; z < 6; z++)
+            {
+                int loIdx = Math.Max(0, (int)(bands[z].lo / binHz));
+                int hiIdx = Math.Min(binCount - 1, (int)(bands[z].hi / binHz));
+
+                float rms = 0;
+                int cnt = hiIdx - loIdx + 1;
+                for (int k = loIdx; k <= hiIdx; k++)
+                    rms += (float)(complex[k].Magnitude * complex[k].Magnitude);
+                rms = (float)Math.Sqrt(rms / Math.Max(1, cnt));
+
+                // Gain + clamp
+                float level = Math.Min(1.0f, rms * gain);
+
+                // Exponential smoothing
+                _smoothedBands[z] = _smoothedBands[z] * smoothing + level * (1 - smoothing);
+                float v = _smoothedBands[z];
+
+                var bc = bands[z].baseColor;
+                byte r = (byte)(bc.r * v);
+                byte g = (byte)(bc.g * v);
+                byte b = (byte)(bc.b * v);
+
+                packet[z * 3] = r; packet[z * 3 + 1] = g; packet[z * 3 + 2] = b;
+
+                var color = MediaColor.FromRgb(r, g, b);
+                int zi = z;
+                System.Windows.Application.Current?.Dispatcher.InvokeAsync(() => AudioColors[zi] = color);
+            }
+
+            if (_udp != null)
+                try { _udp.Send(packet, packet.Length); } catch { }
+        }
+
+        /// <summary>Cooley-Tukey FFT — in-place iterative</summary>
+        private static void FftInPlace(Complex[] a)
+        {
+            int n = a.Length;
+            // Bit-reverse permutation
+            for (int i = 1, j = 0; i < n; i++)
+            {
+                int bit = n >> 1;
+                for (; (j & bit) != 0; bit >>= 1) j ^= bit;
+                j ^= bit;
+                if (i < j) { var t = a[i]; a[i] = a[j]; a[j] = t; }
+            }
+            // FFT
+            for (int len = 2; len <= n; len <<= 1)
+            {
+                double ang = -2 * Math.PI / len;
+                var wlen = new Complex(Math.Cos(ang), Math.Sin(ang));
+                for (int i = 0; i < n; i += len)
+                {
+                    var w = Complex.One;
+                    for (int j = 0; j < len / 2; j++)
+                    {
+                        var u = a[i + j];
+                        var v = a[i + j + len / 2] * w;
+                        a[i + j]           = u + v;
+                        a[i + j + len / 2] = u - v;
+                        w *= wlen;
+                    }
+                }
             }
         }
 

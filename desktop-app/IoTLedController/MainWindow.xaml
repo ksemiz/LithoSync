@@ -221,20 +221,16 @@
                                                         <WrapPanel>
                                                             <RadioButton Style="{StaticResource ModeRadioButton}"
                                                                          GroupName="LedMode" Content="🔲 Statik"
-                                                                         IsChecked="{Binding IsMode0}"
-                                                                         Command="{Binding SetModeCommand}"/>
+                                                                         IsChecked="{Binding IsMode0, Mode=TwoWay}"/>
                                                             <RadioButton Style="{StaticResource ModeRadioButton}"
                                                                          GroupName="LedMode" Content="⚡ Knight Rider"
-                                                                         IsChecked="{Binding IsMode1}"
-                                                                         Command="{Binding SetModeCommand}"/>
+                                                                         IsChecked="{Binding IsMode1, Mode=TwoWay}"/>
                                                             <RadioButton Style="{StaticResource ModeRadioButton}"
                                                                          GroupName="LedMode" Content="🌩️ Şimşek"
-                                                                         IsChecked="{Binding IsMode2}"
-                                                                         Command="{Binding SetModeCommand}"/>
+                                                                         IsChecked="{Binding IsMode2, Mode=TwoWay}"/>
                                                             <RadioButton Style="{StaticResource ModeRadioButton}"
                                                                          GroupName="LedMode" Content="📡 UDP / Ambi"
-                                                                         IsChecked="{Binding IsMode3}"
-                                                                         Command="{Binding SetModeCommand}"/>
+                                                                         IsChecked="{Binding IsMode3, Mode=TwoWay}"/>
                                                         </WrapPanel>
                                                     </StackPanel>
                                                 </Border>
@@ -366,7 +362,7 @@
 
                                                         <!-- Başlat/Durdur -->
                                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
-                                                            <Button Command="{Binding ToggleAmbiLightCommand}"
+                                                            <Button Command="{Binding ToggleAmbiLightAsyncCommand}"
                                                                     Margin="0,0,12,0" Width="140">
                                                                 <Button.Style>
                                                                     <Style TargetType="Button" BasedOn="{StaticResource SuccessButton}">
@@ -465,7 +461,7 @@
                                                         </StackPanel>
 
                                                         <!-- Başlat/Durdur -->
-                                                        <Button Command="{Binding ToggleAudioCommand}"
+                                                         <Button Command="{Binding ToggleAudioAsyncCommand}"
                                                                 HorizontalAlignment="Left" Width="140" Margin="0,0,0,20">
                                                             <Button.Style>
                                                                 <Style TargetType="Button" BasedOn="{StaticResource SuccessButton}">

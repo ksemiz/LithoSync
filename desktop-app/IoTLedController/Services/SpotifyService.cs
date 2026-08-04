@@ -68,7 +68,7 @@ public sealed class SpotifyService : IDisposable
 
         _authServer?.Dispose();
         _authServer = new EmbedIOAuthServer(
-            new Uri($"http://localhost:{_callbackPort}/callback"), _callbackPort);
+            new Uri($"http://127.0.0.1:{_callbackPort}/callback"), _callbackPort);
         await _authServer.Start();
 
         var tcs = new TaskCompletionSource<string>();

@@ -78,6 +78,57 @@ void HttpApiServer::_setupRoutes() {
         }
     });
 
+    // ── GET / (Mobile & Web Dashboard) ────────────────────────────────────────
+    _server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
+        static const char INDEX_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LithoSync LED Controller</title>
+  <style>
+    body { background: #0D0E1A; color: #E8E9F3; font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+    .card { background: #13141F; border: 1px solid #252640; border-radius: 16px; padding: 24px; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); box-sizing: border-box; }
+    h1 { font-size: 20px; font-weight: 800; color: #6C63FF; text-align: center; margin: 0 0 8px 0; }
+    p.sub { font-size: 12px; color: #7B7D99; text-align: center; margin: 0 0 20px 0; }
+    .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+    .mode-btn { background: #1A1B2E; border: 1px solid #252640; color: #E8E9F3; padding: 14px; border-radius: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+    .mode-btn:hover { border-color: #6C63FF; }
+    label { font-size: 13px; font-weight: 600; color: #7B7D99; display: block; margin-top: 14px; margin-bottom: 6px; }
+    input[type=range] { width: 100%; margin: 8px 0; accent-color: #6C63FF; }
+    input[type=color] { width: 100%; height: 50px; border: 1px solid #252640; border-radius: 12px; cursor: pointer; background: #1A1B2E; padding: 4px; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>💡 LithoSync LED</h1>
+    <p class="sub">Mobil & Web Kontrol Paneli</p>
+    <div class="modes">
+      <button class="mode-btn" onclick="setMode(0)">🎨 Sabit Renk</button>
+      <button class="mode-btn" onclick="setMode(1)">🌈 Gökkuşağı</button>
+      <button class="mode-btn" onclick="setMode(2)">🫁 Nefes</button>
+      <button class="mode-btn" onclick="setMode(3)">⚡ UDP Ambi</button>
+    </div>
+    <label>Parlaklık Seviyesi</label>
+    <input type="range" min="0" max="255" id="bright" onchange="setBright(this.value)">
+    <label>Global LED Rengi</label>
+    <input type="color" id="col" value="#6C63FF" onchange="setColor(this.value)">
+  </div>
+  <script>
+    function setMode(m){ fetch('/setMode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})}); }
+    function setBright(b){ fetch('/setBrightness',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brightness:parseInt(b)})}); }
+    function setColor(hex){
+      let r=parseInt(hex.substr(1,2),16), g=parseInt(hex.substr(3,2),16), b=parseInt(hex.substr(5,2),16);
+      fetch('/setColor',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({r:r,g:g,b:b})});
+    }
+  </script>
+</body>
+</html>
+)rawliteral";
+        req->send(200, "text/html", INDEX_HTML);
+    });
+
     // ── GET /status ───────────────────────────────────────────────────────────
     _server.on("/status", HTTP_GET, [this](AsyncWebServerRequest* req) {
         String ledsJson = "[";

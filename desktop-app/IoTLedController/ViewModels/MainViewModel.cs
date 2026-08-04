@@ -15,6 +15,7 @@ using System.Windows.Forms;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using IoTLedController.Services;
+using NAudio.Wave;
 using MediaColor = System.Windows.Media.Color;
 
 namespace IoTLedController.ViewModels
@@ -25,6 +26,7 @@ namespace IoTLedController.ViewModels
         private UdpClient? _udp;
         private CancellationTokenSource? _ambiCts;
         private CancellationTokenSource? _audioCts;
+        private WasapiLoopbackCapture? _audioCapture;
 
         // ── Navigasyon ────────────────────────────────────────────────────────
         [ObservableProperty] private string _currentPage = "Connect";
@@ -51,7 +53,7 @@ namespace IoTLedController.ViewModels
 
         // ── Ses Analizi ───────────────────────────────────────────────────────
         [ObservableProperty] private bool   _audioRunning;
-        [ObservableProperty] private double _audioGain = 2.0;
+        [ObservableProperty] private double _audioGain = 2.5;
         [ObservableProperty] private double _audioSmoothing = 0.5;
         public ObservableCollection<MediaColor> AudioColors { get; } = new();
 
@@ -80,7 +82,7 @@ namespace IoTLedController.ViewModels
             };
             Spotify.AuthStatusChanged += s => SpotifyAuth = s;
 
-            // Uygulama açılışında ağı otomatik tara (Otomatik Keşif)
+            // Otomatik Keşif
             Task.Run(() => DiscoverDeviceAsync());
         }
 
@@ -91,7 +93,7 @@ namespace IoTLedController.ViewModels
         private async Task DiscoverDeviceAsync()
         {
             IsSearching = true;
-            ConnectionStatus = "Ağdaki LithoSync Cihazı Otomatik Otomatik Taranıyor...";
+            ConnectionStatus = "Ağdaki LithoSync Cihazı Otomatik Taranıyor...";
             try
             {
                 using var udpClient = new UdpClient();
@@ -117,7 +119,6 @@ namespace IoTLedController.ViewModels
             }
             catch
             {
-                // Keşif zaman aşımına uğrarsa mDNS dene
                 try
                 {
                     DeviceIp = "iot-led.local";
@@ -230,8 +231,9 @@ namespace IoTLedController.ViewModels
             }
         }
 
+        // ── AMBILIGHT (EKRAN OKUMA) ───────────────────────────────────────────
         [RelayCommand]
-        private void ToggleAmbiLight()
+        private async Task ToggleAmbiLightAsync()
         {
             if (AmbiRunning)
             {
@@ -241,6 +243,7 @@ namespace IoTLedController.ViewModels
             else
             {
                 AmbiRunning = true;
+                await SetModeAsync("3"); // ESP32'yi UDP Moduna geçir
                 _ambiCts = new CancellationTokenSource();
                 Task.Run(() => RunAmbiLoopAsync(_ambiCts.Token));
             }
@@ -258,7 +261,7 @@ namespace IoTLedController.ViewModels
 
                 if (_udp != null && packet.Length == 18)
                 {
-                    await _udp.SendAsync(packet, packet.Length);
+                    try { await _udp.SendAsync(packet, packet.Length); } catch { }
                 }
 
                 for (int i = 0; i < 6; i++)
@@ -287,7 +290,7 @@ namespace IoTLedController.ViewModels
             try
             {
                 var bounds = Screen.PrimaryScreen.Bounds;
-                int h = bounds.Height / 5;
+                int h = Math.Max(10, bounds.Height / 5);
                 int y = bounds.Height - h;
 
                 using var bmp = new Bitmap(bounds.Width, h, PixelFormat.Format24bppRgb);
@@ -302,9 +305,9 @@ namespace IoTLedController.ViewModels
                     long r = 0, g = 0, b = 0;
                     int count = 0;
 
-                    for (int px = z * zoneW; px < (z + 1) * zoneW; px += 10)
+                    for (int px = z * zoneW; px < (z + 1) * zoneW; px += 15)
                     {
-                        for (int py = 0; py < h; py += 10)
+                        for (int py = 0; py < h; py += 15)
                         {
                             var c = bmp.GetPixel(px, py);
                             r += c.R; g += c.G; b += c.B;
@@ -325,48 +328,75 @@ namespace IoTLedController.ViewModels
             return buf;
         }
 
+        // ── GERÇEK NAUDIO SES ANALİZİ (WASAPI LOOPBACK) ──────────────────────
         [RelayCommand]
-        private void ToggleAudio()
+        private async Task ToggleAudioAsync()
         {
             if (AudioRunning)
             {
-                _audioCts?.Cancel();
                 AudioRunning = false;
+                try
+                {
+                    _audioCapture?.StopRecording();
+                    _audioCapture?.Dispose();
+                    _audioCapture = null;
+                }
+                catch { }
             }
             else
             {
                 AudioRunning = true;
-                _audioCts = new CancellationTokenSource();
-                Task.Run(() => RunAudioLoopAsync(_audioCts.Token));
+                await SetModeAsync("3"); // ESP32'yi UDP Moduna geçir
+                StartWasapiAudioCapture();
             }
         }
 
-        private async Task RunAudioLoopAsync(CancellationToken ct)
+        private void StartWasapiAudioCapture()
         {
-            var rnd = new Random();
-            while (!ct.IsCancellationRequested)
+            try
             {
-                byte[] packet = new byte[18];
-                for (int i = 0; i < 6; i++)
+                _audioCapture = new WasapiLoopbackCapture();
+                _audioCapture.DataAvailable += (s, e) =>
                 {
-                    byte r = (byte)(rnd.Next(0, 255) * AudioGain);
-                    byte g = (byte)(rnd.Next(0, 255) * AudioGain);
-                    byte b = (byte)(rnd.Next(0, 255) * AudioGain);
-                    packet[i * 3]     = r;
-                    packet[i * 3 + 1] = g;
-                    packet[i * 3 + 2] = b;
+                    if (!AudioRunning) return;
 
-                    var c = MediaColor.FromRgb(r, g, b);
-                    int capturedI = i;
-                    System.Windows.Application.Current?.Dispatcher.InvokeAsync(() => AudioColors[capturedI] = c);
-                }
+                    float maxVol = 0;
+                    int sampleCount = e.BytesRecorded / 4;
+                    for (int i = 0; i < e.BytesRecorded; i += 4)
+                    {
+                        float sample = BitConverter.ToSingle(e.Buffer, i);
+                        maxVol = Math.Max(maxVol, Math.Abs(sample));
+                    }
 
-                if (_udp != null)
-                {
-                    await _udp.SendAsync(packet, packet.Length);
-                }
+                    float volume = Math.Min(1.0f, maxVol * (float)AudioGain);
+                    byte r = (byte)(volume * 255);
+                    byte g = (byte)(volume * 180);
+                    byte b = (byte)((1.0f - volume) * 255);
 
-                await Task.Delay(50, ct);
+                    byte[] packet = new byte[18];
+                    for (int i = 0; i < 6; i++)
+                    {
+                        packet[i * 3]     = r;
+                        packet[i * 3 + 1] = g;
+                        packet[i * 3 + 2] = b;
+
+                        var c = MediaColor.FromRgb(r, g, b);
+                        int capI = i;
+                        System.Windows.Application.Current?.Dispatcher.InvokeAsync(() => AudioColors[capI] = c);
+                    }
+
+                    if (_udp != null)
+                    {
+                        try { _udp.Send(packet, packet.Length); } catch { }
+                    }
+                };
+
+                _audioCapture.StartRecording();
+            }
+            catch (Exception ex)
+            {
+                AudioRunning = false;
+                System.Windows.MessageBox.Show($"Ses yakalama başlatılamadı: {ex.Message}");
             }
         }
 

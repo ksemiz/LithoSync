@@ -1,9 +1,5 @@
 // =============================================================================
-//  lithosync_firmware.ino  —  ESP32-C3 Super Mini | LithoSync Firmware
-//  Arduino IDE Uyumlu Sketch Dosyası
-//
-//  Donanım  : ESP32-C3 Super Mini
-//  LED      : 6x WS2812B @ GPIO 8
+//  main.cpp  —  ESP32-C3 Super Mini  |  IoT LED Controller
 // =============================================================================
 
 #include <Arduino.h>
@@ -21,38 +17,41 @@ OtaManager     otaMgr;
 HttpApiServer  httpSrv(ledCtrl, otaMgr, netMgr);
 UdpServer      udpSrv(ledCtrl);
 
-// ─── setup() ──────────────────────────────────────────────────────────────────
+static unsigned long lastRedBlink = 0;
+static bool redState = false;
+
 void setup() {
     Serial.begin(115200);
-    delay(1000);  // USB-CDC stabilizasyonu
+    delay(1000);
 
     Serial.println("\n╔══════════════════════════════════╗");
-    Serial.println("║   LithoSync LED Controller v" CURRENT_VERSION "  ║");
+    Serial.println("║   IoT LED Controller v" CURRENT_VERSION "      ║");
     Serial.println("║   ESP32-C3 Super Mini + WS2812B  ║");
     Serial.println("╚══════════════════════════════════╝\n");
 
     // 1. LED Başlat
     ledCtrl.begin();
-    ledCtrl.setGlobalColor(CRGB(0, 0, 30)); // Mavi = WiFi bekleniyor
 
-    // 2. Wi-Fi bağlantısı (Captive Portal)
+    // 2. Wi-Fi bağlantısı (Bağlantı yoksa kırmızı yanıp söner)
     if (!netMgr.begin()) {
         return;
     }
 
-    // 3. Bağlantı başarılı — 3 kez yeşil yanıp sön
+    // 3. Bağlantı başarılı — yeşil sinyal
     for (int i = 0; i < 3; i++) {
-        ledCtrl.setGlobalColor(CRGB(0, 50, 0));
-        delay(200);
+        ledCtrl.setGlobalColor(CRGB(0, 80, 0));
+        delay(150);
         ledCtrl.setGlobalColor(CRGB::Black);
-        delay(200);
+        delay(150);
     }
 
-    // 4. REST API & UDP başlat
+    // 4. REST API başlat
     httpSrv.begin();
+
+    // 5. UDP sunucusu başlat
     udpSrv.begin();
 
-    // 5. Başlangıç modunu sıfırla
+    // 6. Başlangıç LED modu
     ledCtrl.setMode(MODE_STATIC);
     ledCtrl.setGlobalColor(CRGB::Black);
 
@@ -61,9 +60,23 @@ void setup() {
     Serial.printf("[SYS] mDNS: http://%s.local\n\n", HOSTNAME);
 }
 
-// ─── loop() ───────────────────────────────────────────────────────────────────
 void loop() {
+    // İnternet/Wi-Fi koparsa KIRMIZI YANIP SÖN
+    if (!netMgr.isConnected()) {
+        if (millis() - lastRedBlink >= 400) {
+            lastRedBlink = millis();
+            redState = !redState;
+            ledCtrl.setGlobalColor(redState ? CRGB(255, 0, 0) : CRGB::Black);
+        }
+        yield();
+        return;
+    }
+
+    // LED animasyon döngüsü
     ledCtrl.update();
+
+    // Periyodik OTA kontrolü
     otaMgr.tick();
+
     yield();
 }

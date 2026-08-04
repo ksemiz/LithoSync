@@ -1,21 +1,5 @@
 // =============================================================================
 //  main.cpp  —  ESP32-C3 Super Mini  |  IoT LED Controller
-//
-//  Donanım : ESP32-C3 Super Mini
-//  LED     : 6x WS2812B @ GPIO 8
-//  Kütüphane: FastLED, WiFiManager, ESPAsyncWebServer, ArduinoJson
-//
-//  Başlangıç akışı:
-//    1. Serial başlat
-//    2. LedController başlat (FastLED)
-//    3. NetworkManager başlat (WiFiManager Captive Portal)
-//    4. HttpApiServer başlat (REST API)
-//    5. UdpServer başlat (Ambilight)
-//    6. OtaManager başlat (GitHub OTA)
-//
-//  loop() içinde:
-//    - LedController.update()  → animasyon ticking
-//    - OtaManager.tick()       → periyodik OTA kontrolü
 // =============================================================================
 
 #include <Arduino.h>
@@ -33,34 +17,32 @@ OtaManager     otaMgr;
 HttpApiServer  httpSrv(ledCtrl, otaMgr, netMgr);
 UdpServer      udpSrv(ledCtrl);
 
-// ─── setup() ──────────────────────────────────────────────────────────────────
+static unsigned long lastRedBlink = 0;
+static bool redState = false;
+
 void setup() {
     Serial.begin(115200);
-    delay(1000);  // USB-CDC stabilizasyonu
+    delay(1000);
 
     Serial.println("\n╔══════════════════════════════════╗");
     Serial.println("║   IoT LED Controller v" CURRENT_VERSION "      ║");
     Serial.println("║   ESP32-C3 Super Mini + WS2812B  ║");
     Serial.println("╚══════════════════════════════════╝\n");
 
-    // 1. LED Başlat (ilk vizüel geri bildirim için)
+    // 1. LED Başlat
     ledCtrl.begin();
 
-    // Başlangıç rengi: WiFi bağlantı bekleme sinyali (mavi soluk)
-    ledCtrl.setGlobalColor(CRGB(0, 0, 30));
-
-    // 2. Wi-Fi bağlantısı (Captive Portal)
+    // 2. Wi-Fi bağlantısı (Bağlantı yoksa kırmızı yanıp söner)
     if (!netMgr.begin()) {
-        // begin() başarısız olursa ESP.restart() çağırır
         return;
     }
 
-    // 3. Bağlantı başarılı — yeşil yanıp sön
+    // 3. Bağlantı başarılı — yeşil sinyal
     for (int i = 0; i < 3; i++) {
-        ledCtrl.setGlobalColor(CRGB(0, 50, 0));
-        delay(200);
+        ledCtrl.setGlobalColor(CRGB(0, 80, 0));
+        delay(150);
         ledCtrl.setGlobalColor(CRGB::Black);
-        delay(200);
+        delay(150);
     }
 
     // 4. REST API başlat
@@ -69,7 +51,7 @@ void setup() {
     // 5. UDP sunucusu başlat
     udpSrv.begin();
 
-    // 6. Başlangıç LED modunu sıfırla (Statik, siyah)
+    // 6. Başlangıç LED modu
     ledCtrl.setMode(MODE_STATIC);
     ledCtrl.setGlobalColor(CRGB::Black);
 
@@ -78,14 +60,23 @@ void setup() {
     Serial.printf("[SYS] mDNS: http://%s.local\n\n", HOSTNAME);
 }
 
-// ─── loop() ───────────────────────────────────────────────────────────────────
 void loop() {
+    // İnternet/Wi-Fi koparsa KIRMIZI YANIP SÖN
+    if (!netMgr.isConnected()) {
+        if (millis() - lastRedBlink >= 400) {
+            lastRedBlink = millis();
+            redState = !redState;
+            ledCtrl.setGlobalColor(redState ? CRGB(255, 0, 0) : CRGB::Black);
+        }
+        yield();
+        return;
+    }
+
     // LED animasyon döngüsü
     ledCtrl.update();
 
-    // Periyodik OTA kontrolü (30 dakika aralıklı)
+    // Periyodik OTA kontrolü
     otaMgr.tick();
 
-    // ESP-IDF görev zamanlayıcısına nefes aldır
     yield();
 }

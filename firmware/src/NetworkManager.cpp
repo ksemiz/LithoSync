@@ -1,11 +1,14 @@
 // =============================================================================
-//  NetworkManager.cpp  —  WiFiManager Captive Portal + mDNS implementasyonu
+//  NetworkManager.cpp  —  WiFiManager Captive Portal + mDNS + Red Blink Callback
 // =============================================================================
 
 #include "NetworkManager.h"
 #include "Config.h"
+#include "LedController.h"
 #include <WiFiManager.h>
 #include <ESPmDNS.h>
+
+extern LedController ledCtrl;
 
 NetworkManager::NetworkManager() {
     _wm = new WiFiManager();
@@ -24,6 +27,17 @@ bool NetworkManager::begin() {
     _wm->setConnectTimeout(30);          // Bağlantı denemesi için 30 sn
     _wm->setBreakAfterConfig(true);      // Config alındıktan sonra devam et
 
+    // İnternet yokken / Kurulum modundayken KIRMIZI YANIP SÖNME callback
+    _wm->setAPCallback([](WiFiManager* myWiFiManager) {
+        Serial.println("[NET] İnternet bağlantısı yok! AP Modunda kırmızı yanıp sönüyor...");
+        for (int i = 0; i < 6; i++) {
+            ledCtrl.setGlobalColor(CRGB(255, 0, 0));
+            delay(300);
+            ledCtrl.setGlobalColor(CRGB::Black);
+            delay(300);
+        }
+    });
+
     // Müşteri için Özel Dark Glassmorphism Captive Portal Tasarımı
     _wm->setCustomHeadElement(R"(
 <style>
@@ -41,8 +55,13 @@ bool NetworkManager::begin() {
     bool connected = _wm->autoConnect(AP_SSID, AP_PASSWORD);
 
     if (!connected) {
-        Serial.println("[NET] Bağlantı başarısız! ESP yeniden başlatılıyor...");
-        delay(3000);
+        Serial.println("[NET] Bağlantı başarısız! Kırmızı sinyal ile yeniden başlatılıyor...");
+        for (int i = 0; i < 5; i++) {
+            ledCtrl.setGlobalColor(CRGB::Red);
+            delay(150);
+            ledCtrl.setGlobalColor(CRGB::Black);
+            delay(150);
+        }
         ESP.restart();
         return false;
     }

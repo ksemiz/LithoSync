@@ -67,7 +67,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     // ─── Spotify ──────────────────────────────────────────────────────────────
     [ObservableProperty] private bool   _spotifyAuthenticated = false;
     [ObservableProperty] private bool   _spotifyRunning       = false;
-    [ObservableProperty] private string _spotifyClientId      = "YOUR_SPOTIFY_CLIENT_ID";
+    [ObservableProperty] private string _spotifyClientId      = "bc8d968a01df4e0a8fdd22a81a63305b";
     [ObservableProperty] private string _spotifyStatus        = "Bağlı değil";
     [ObservableProperty] private string _currentTrackTitle    = "";
     [ObservableProperty] private string _currentTrackArtist   = "";

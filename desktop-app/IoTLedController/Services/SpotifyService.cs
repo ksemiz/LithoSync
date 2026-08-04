@@ -24,7 +24,7 @@ public sealed class SpotifyService : IDisposable
     private readonly HttpClient    _http;
 
     // Spotify credentials — kullanıcı tarafından doldurulacak
-    private string _clientId     = "YOUR_SPOTIFY_CLIENT_ID";
+    private string _clientId     = "bc8d968a01df4e0a8fdd22a81a63305b";
     private int    _callbackPort = 5543;
 
     private SpotifyClient?          _spotify;

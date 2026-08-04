@@ -90,15 +90,15 @@ void HttpApiServer::_setupRoutes() {
         }
         ledsJson += "]";
 
-        String body = "{\"ok\":true"
-            ",\"version\":\""   + String(CURRENT_VERSION) + "\""
-            ",\"mode\":"        + String(_led.getMode())
-            ",\"brightness\":"  + String(_led.getBrightness())
-            ",\"ip\":\""        + _net.getIPAddress() + "\""
-            ",\"ssid\":\""      + _net.getSSID() + "\""
-            ",\"mac\":\""       + _net.getMACAddress() + "\""
-            ",\"uptime\":"      + String(millis() / 1000)
-            ",\"leds\":"        + ledsJson +
+        String body = String("{\"ok\":true")
+            + ",\"version\":\""   + String(CURRENT_VERSION) + "\""
+            + ",\"mode\":"        + String(_led.getMode())
+            + ",\"brightness\":"  + String(_led.getBrightness())
+            + ",\"ip\":\""        + _net.getIPAddress() + "\""
+            + ",\"ssid\":\""      + _net.getSSID() + "\""
+            + ",\"mac\":\""       + _net.getMACAddress() + "\""
+            + ",\"uptime\":"      + String(millis() / 1000)
+            + ",\"leds\":"        + ledsJson +
             "}";
         req->send(_makeJsonResponse(req, body));
     });

@@ -4,24 +4,41 @@
 
 #include "NetworkManager.h"
 #include "Config.h"
-#include <Arduino.h>
+#include <WiFiManager.h>
 #include <ESPmDNS.h>
 
-NetworkManager::NetworkManager() {}
+NetworkManager::NetworkManager() {
+    _wm = new WiFiManager();
+}
+
+NetworkManager::~NetworkManager() {
+    delete _wm;
+}
 
 bool NetworkManager::begin() {
     Serial.println("[NET] WiFiManager başlatılıyor...");
     Serial.printf("[NET] AP: %s / %s\n", AP_SSID, AP_PASSWORD);
 
-    // WiFiManager yapılandırması
-    _wm.setTitle("IoT LED Controller");
-    _wm.setConfigPortalTimeout(180);    // 3 dk sonra portal kapanır
-    _wm.setConnectTimeout(30);          // Bağlantı denemesi için 30 sn
-    _wm.setBreakAfterConfig(true);      // Config alındıktan sonra devam et
+    _wm->setTitle("LithoSync LED Controller");
+    _wm->setConfigPortalTimeout(180);    // 3 dk sonra portal kapanır
+    _wm->setConnectTimeout(30);          // Bağlantı denemesi için 30 sn
+    _wm->setBreakAfterConfig(true);      // Config alındıktan sonra devam et
 
-    // Daha önce kayıtlı ağa bağlanmaya çalış;
-    // başarısız olursa Captive Portal aç
-    bool connected = _wm.autoConnect(AP_SSID, AP_PASSWORD);
+    // Müşteri için Özel Dark Glassmorphism Captive Portal Tasarımı
+    _wm->setCustomHeadElement(R"(
+<style>
+  body { background: #0D0E1A !important; color: #E8E9F3 !important; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; margin: 0; padding: 20px; }
+  h1 { font-size: 22px !important; font-weight: 800 !important; color: #6C63FF !important; text-align: center; margin-bottom: 20px; }
+  h2 { font-size: 14px !important; color: #7B7D99 !important; text-align: center; font-weight: normal; margin-bottom: 24px; }
+  div.c { background: #13141F !important; border: 1px solid #252640 !important; border-radius: 16px !important; padding: 24px !important; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 400px; margin: 20px auto; }
+  input[type='text'], input[type='password'], select { background: #1A1B2E !important; color: #E8E9F3 !important; border: 1px solid #252640 !important; border-radius: 10px !important; padding: 12px 14px !important; margin-bottom: 12px !important; width: 100% !important; box-sizing: border-box !important; }
+  button, input[type='submit'] { background: linear-gradient(135deg, #6C63FF, #4A44B0) !important; color: #FFFFFF !important; border: none !important; border-radius: 10px !important; font-weight: 700 !important; padding: 14px !important; width: 100% !important; cursor: pointer; margin-top: 10px; }
+  a { color: #6C63FF !important; text-decoration: none; }
+  div.q { border-bottom: 1px solid #252640 !important; padding: 10px 0 !important; }
+</style>
+)");
+
+    bool connected = _wm->autoConnect(AP_SSID, AP_PASSWORD);
 
     if (!connected) {
         Serial.println("[NET] Bağlantı başarısız! ESP yeniden başlatılıyor...");
@@ -35,7 +52,6 @@ bool NetworkManager::begin() {
     Serial.printf("[NET] IP   : %s\n", WiFi.localIP().toString().c_str());
     Serial.printf("[NET] RSSI : %d dBm\n", WiFi.RSSI());
 
-    // mDNS kaydı → http://iot-led.local erişimi
     if (MDNS.begin(HOSTNAME)) {
         MDNS.addService("http", "tcp", HTTP_PORT);
         Serial.printf("[NET] mDNS: http://%s.local\n", HOSTNAME);
@@ -63,8 +79,8 @@ String NetworkManager::getMACAddress() const {
 }
 
 void NetworkManager::resetSettings() {
-    Serial.println("[NET] WiFi ayarları siliниyor, AP moduna geçiliyor...");
-    _wm.resetSettings();
+    Serial.println("[NET] WiFi ayarları siliniyor, AP moduna geçiliyor...");
+    _wm->resetSettings();
     delay(500);
     ESP.restart();
 }

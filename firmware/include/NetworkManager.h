@@ -4,14 +4,17 @@
 //  NetworkManager.h  —  WiFiManager Captive Portal + mDNS
 // =============================================================================
 
-#include <WiFiManager.h>
+#include <Arduino.h>
+
+// Forward declaration — WiFiManager.h sadece .cpp dosyasında dahil edilir
+class WiFiManager;
 
 class NetworkManager {
 public:
     NetworkManager();
+    ~NetworkManager();
 
     // WiFi kurulum — Captive Portal ile otomatik bağlantı
-    // Döner true: bağlandı, false: başarısız (ESP restart edilir)
     bool begin();
 
     // ── Durum ─────────────────────────────────────────────────────────────────
@@ -24,5 +27,5 @@ public:
     void resetSettings();
 
 private:
-    WiFiManager _wm;
+    WiFiManager* _wm;
 };

@@ -51,6 +51,7 @@ namespace IoTLedController.ViewModels
                     OnPropertyChanged(nameof(IsMode1));
                     OnPropertyChanged(nameof(IsMode2));
                     OnPropertyChanged(nameof(IsMode3));
+                    OnPropertyChanged(nameof(AnimColorVisible));
                 }
             }
         }
@@ -59,6 +60,24 @@ namespace IoTLedController.ViewModels
         public bool IsMode1 { get => CurrentMode == 1; set { if (value && CurrentMode != 1) _ = SetModeAsync("1"); } }
         public bool IsMode2 { get => CurrentMode == 2; set { if (value && CurrentMode != 2) _ = SetModeAsync("2"); } }
         public bool IsMode3 { get => CurrentMode == 3; set { if (value && CurrentMode != 3) _ = SetModeAsync("3"); } }
+
+        // Animasyon rengi (Knight Rider mod=1 ve Thunder mod=2 için)
+        private MediaColor _animColor = MediaColor.FromRgb(255, 0, 0);
+        public MediaColor AnimColor
+        {
+            get => _animColor;
+            set
+            {
+                if (SetProperty(ref _animColor, value))
+                    _ = PostJsonAsync("/setAnimColor", new { r = value.R, g = value.G, b = value.B });
+            }
+        }
+
+        // Sadece mod 1 veya 2'de renk seçici görünsün
+        public System.Windows.Visibility AnimColorVisible =>
+            (CurrentMode == 1 || CurrentMode == 2)
+                ? System.Windows.Visibility.Visible
+                : System.Windows.Visibility.Collapsed;
 
         [ObservableProperty] private byte       _brightness = 200;
         [ObservableProperty] private MediaColor _globalColor = MediaColor.FromRgb(255, 100, 0);
@@ -193,6 +212,15 @@ namespace IoTLedController.ViewModels
             using var dlg = new ColorDialog();
             if (dlg.ShowDialog() == DialogResult.OK)
                 SetGlobalColor(MediaColor.FromRgb(dlg.Color.R, dlg.Color.G, dlg.Color.B));
+        }
+
+        [RelayCommand]
+        private void PickAnimColor()
+        {
+            using var dlg = new ColorDialog();
+            dlg.Color = System.Drawing.Color.FromArgb(AnimColor.R, AnimColor.G, AnimColor.B);
+            if (dlg.ShowDialog() == DialogResult.OK)
+                AnimColor = MediaColor.FromRgb(dlg.Color.R, dlg.Color.G, dlg.Color.B);
         }
 
         public async void SetGlobalColor(MediaColor c)

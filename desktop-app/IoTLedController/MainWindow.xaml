@@ -232,6 +232,20 @@
                                                                          GroupName="LedMode" Content="📡 UDP / Ambi"
                                                                          IsChecked="{Binding IsMode3, Mode=TwoWay}"/>
                                                         </WrapPanel>
+
+                                                        <!-- Animasyon Rengi (Knight Rider / Şimşek için) -->
+                                                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0"
+                                                                    Visibility="{Binding AnimColorVisible}">
+                                                            <TextBlock Text="Animasyon Rengi:" Style="{StaticResource FieldLabel}" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                                            <Border Width="36" Height="36" CornerRadius="8" Margin="0,0,10,0">
+                                                                <Border.Background>
+                                                                    <SolidColorBrush Color="{Binding AnimColor}"/>
+                                                                </Border.Background>
+                                                            </Border>
+                                                            <Button Style="{StaticResource AccentButton}"
+                                                                    Content="🎨 Renk Seç"
+                                                                    Command="{Binding PickAnimColorCommand}"/>
+                                                        </StackPanel>
                                                     </StackPanel>
                                                 </Border>
 
@@ -362,7 +376,7 @@
 
                                                         <!-- Başlat/Durdur -->
                                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
-                                                            <Button Command="{Binding ToggleAmbiLightAsyncCommand}"
+                                                            <Button Command="{Binding ToggleAmbiLightCommand}"
                                                                     Margin="0,0,12,0" Width="140">
                                                                 <Button.Style>
                                                                     <Style TargetType="Button" BasedOn="{StaticResource SuccessButton}">
@@ -461,7 +475,7 @@
                                                         </StackPanel>
 
                                                         <!-- Başlat/Durdur -->
-                                                         <Button Command="{Binding ToggleAudioAsyncCommand}"
+                                                         <Button Command="{Binding ToggleAudioCommand}"
                                                                 HorizontalAlignment="Left" Width="140" Margin="0,0,0,20">
                                                             <Button.Style>
                                                                 <Style TargetType="Button" BasedOn="{StaticResource SuccessButton}">

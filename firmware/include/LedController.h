@@ -34,12 +34,16 @@ public:
     // data: NUM_LEDS * 3 bayt (R, G, B sırası), toplam 18 bayt
     void writeUdpData(const uint8_t* data, size_t len);
 
+    // ── Animasyon Rengi (Knight Rider / Thunder) ──────────────────────────────
+    void setAnimColor(CRGB color) { _animColor = color; }
+
     // ── Ham erişim (status endpoint için) ────────────────────────────────────
     CRGB leds[NUM_LEDS];
 
 private:
     uint8_t _mode;
     uint8_t _brightness;
+    CRGB    _animColor;  // Knight Rider ve Thunder animasyon rengi
 
     // ── Knight Rider durumu ───────────────────────────────────────────────────
     int8_t        _krPos;

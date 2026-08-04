@@ -264,6 +264,23 @@ void HttpApiServer::_setupRoutes() {
         })
     );
 
+    // POST /setAnimColor (Knight Rider / Thunder animasyon rengi)
+    _server.on("/setAnimColor", HTTP_POST,
+        [](AsyncWebServerRequest*) {},
+        nullptr,
+        _makeBodyHandler([this](AsyncWebServerRequest* req, JsonDocument& doc) {
+            if (!doc["r"].is<int>() || !doc["g"].is<int>() || !doc["b"].is<int>()) {
+                _jsonError(req, 400, "r, g, b alanları gerekli");
+                return;
+            }
+            CRGB color(doc["r"].as<uint8_t>(),
+                       doc["g"].as<uint8_t>(),
+                       doc["b"].as<uint8_t>());
+            _led.setAnimColor(color);
+            _jsonOk(req, "\"message\":\"Animasyon rengi güncellendi\"");
+        })
+    );
+
     // POST /setLedColor (bireysel)
     _server.on("/setLedColor", HTTP_POST,
         [](AsyncWebServerRequest*) {},

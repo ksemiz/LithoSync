@@ -1,3 +1,11 @@
+# ─── Portable Tools & Build Caches ───────────────────────────────────────────
+jdk17/
+dotnet_sdk/
+dist/
+.gradle/
+*.gradle
+compile_commands.json
+
 # ─── Node.js / Mobile ─────────────────────────────────────────────────────────
 node_modules/
 .expo/

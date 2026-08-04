@@ -1,19 +1,21 @@
-using System.Windows;
-using IoTLedController.ViewModels;
+using System;
+using WpfApp = System.Windows.Application;
+using WpfMsg = System.Windows.MessageBox;
 
-namespace IoTLedController;
-
-public partial class App : Application
+namespace IoTLedController
 {
-    protected override void OnStartup(StartupEventArgs e)
+    public partial class App : WpfApp
     {
-        base.OnStartup(e);
-        // Global exception handler
-        DispatcherUnhandledException += (_, ex) =>
+        public App()
         {
-            MessageBox.Show($"Beklenmeyen hata:\n{ex.Exception.Message}",
-                "IoT LED Controller", MessageBoxButton.OK, MessageBoxImage.Error);
-            ex.Handled = true;
-        };
+            this.DispatcherUnhandledException += (s, e) =>
+            {
+                WpfMsg.Show($"Beklenmeyen hata:\n{e.Exception.Message}",
+                    "IoT LED Controller",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Error);
+                e.Handled = true;
+            };
+        }
     }
 }

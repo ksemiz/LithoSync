@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Windows.Media;
 using IoTLedController.ViewModels;
+using MediaColor = System.Windows.Media.Color;
+using MediaColorConverter = System.Windows.Media.ColorConverter;
 
 namespace IoTLedController;
 
@@ -21,20 +23,17 @@ public partial class MainWindow : Window
         {
             if (e.PropertyName == nameof(MainViewModel.IsConnected))
             {
-                // UI thread'de çalıştır
                 Dispatcher.Invoke(() =>
                 {
-                    // Bağlantı LED göstergesi
-                    // Doğrudan XAML DataTrigger ile çözülemiyor, kod-behind yardımıyla
-                    var dotBrush = (SolidColorBrush)FindName("connDotBrush")!;
-                    if (dotBrush is not null)
+                    var dotBrush = FindName("connDotBrush") as SolidColorBrush;
+                    if (dotBrush != null)
                     {
-                        // Freeze edilmiş brush ile değiştiremeyiz; yeni brush atayalım
+                        dotBrush.Color = _vm.IsConnected 
+                            ? (MediaColor)MediaColorConverter.ConvertFromString("#2ECC71") 
+                            : (MediaColor)MediaColorConverter.ConvertFromString("#E74C3C");
                     }
                 });
             }
         };
-
-        Closed += (_, _) => _vm.Dispose();
     }
 }

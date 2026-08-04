@@ -9,6 +9,10 @@
         Style="{StaticResource DarkWindowStyle}"
         WindowStartupLocation="CenterScreen">
 
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+
     <Window.DataContext>
         <vm:MainViewModel/>
     </Window.DataContext>
@@ -365,7 +369,7 @@
                                                                     <Style TargetType="Button" BasedOn="{StaticResource SuccessButton}">
                                                                         <Style.Triggers>
                                                                             <DataTrigger Binding="{Binding AmbiRunning}" Value="True">
-                                                                                <Setter Property="Style" Value="{StaticResource DangerButton}"/>
+                                                                                
                                                                                 <Setter Property="Content" Value="⏹  Durdur"/>
                                                                             </DataTrigger>
                                                                             <DataTrigger Binding="{Binding AmbiRunning}" Value="False">
@@ -560,7 +564,7 @@
                                                                        Foreground="{StaticResource SuccessBrush}"
                                                                        FontWeight="Bold" FontSize="12"
                                                                        Visibility="{Binding SpotifyAuthenticated,
-                                                                           Converter={x:Static BooleanToVisibilityConverter}}"/>
+                                                                           Converter={StaticResource BoolToVis}}"/>
                                                         </StackPanel>
                                                     </StackPanel>
                                                 </Border>

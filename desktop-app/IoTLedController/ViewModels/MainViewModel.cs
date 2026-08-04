@@ -1,390 +1,321 @@
-using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
-using IoTLedController.Models;
-using IoTLedController.Services;
+using System;
 using System.Collections.ObjectModel;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+using System.Linq;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
-using System.Windows.Media;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using IoTLedController.Services;
+using MediaColor = System.Windows.Media.Color;
 
-namespace IoTLedController.ViewModels;
-
-// =============================================================================
-//  MainViewModel.cs  —  MVVM ViewModel (CommunityToolkit.Mvvm)
-// =============================================================================
-
-public partial class MainViewModel : ObservableObject, IDisposable
+namespace IoTLedController.ViewModels
 {
-    // ─── Servisler ────────────────────────────────────────────────────────────
-    private readonly UdpSender            _udp;
-    private readonly AmbiLightService     _ambi;
-    private readonly AudioAnalysisService _audio;
-    private readonly SpotifyService       _spotify;
-    private readonly HttpClient           _http;
-
-    // ─── Bağlantı ─────────────────────────────────────────────────────────────
-    [ObservableProperty] private string  _espIp      = "192.168.1.100";
-    [ObservableProperty] private int     _udpPort    = 4210;
-    [ObservableProperty] private bool    _isConnected = false;
-    [ObservableProperty] private string  _connectionStatus = "Bağlı değil";
-    [ObservableProperty] private string  _currentPage = "Connect";
-    [ObservableProperty] private long    _udpSentPackets = 0;
-    [ObservableProperty] private string  _deviceInfo = "";
-
-    // ─── LED Kontrol ──────────────────────────────────────────────────────────
-    [ObservableProperty] private int     _selectedMode = 0;
-
-    // Mod radio buton bağlamaları
-    public bool IsMode0 { get => _selectedMode == 0; set { if (value) { SelectedMode = 0; OnPropertyChanged(); } } }
-    public bool IsMode1 { get => _selectedMode == 1; set { if (value) { SelectedMode = 1; OnPropertyChanged(); } } }
-    public bool IsMode2 { get => _selectedMode == 2; set { if (value) { SelectedMode = 2; OnPropertyChanged(); } } }
-    public bool IsMode3 { get => _selectedMode == 3; set { if (value) { SelectedMode = 3; OnPropertyChanged(); } } }
-    [ObservableProperty] private int     _brightness   = 80;
-    [ObservableProperty] private Color   _globalColor  = Colors.White;
-
-    // 6 LED'in bireysel renkleri
-    public ObservableCollection<LedColorItem> LedColors { get; } = new(
-        Enumerable.Range(0, 6).Select(i => new LedColorItem { Index = i, Color = Colors.Black }));
-
-    // ─── AmbiLight ────────────────────────────────────────────────────────────
-    [ObservableProperty] private bool   _ambiRunning  = false;
-    [ObservableProperty] private double _ambiFps      = 0;
-    [ObservableProperty] private int    _ambiTargetFps = 30;
-
-    // Canlı AmbiLight renk önizlemesi
-    public ObservableCollection<Color> AmbiColors { get; } = new(
-        Enumerable.Repeat(Colors.Black, 6));
-
-    // ─── Ses Analizi ──────────────────────────────────────────────────────────
-    [ObservableProperty] private bool   _audioRunning  = false;
-    [ObservableProperty] private float  _audioGain     = 3.0f;
-    [ObservableProperty] private float  _audioSmoothing = 0.7f;
-
-    public ObservableCollection<Color> AudioColors { get; } = new(
-        Enumerable.Repeat(Colors.Black, 6));
-
-    // ─── Spotify ──────────────────────────────────────────────────────────────
-    [ObservableProperty] private bool   _spotifyAuthenticated = false;
-    [ObservableProperty] private bool   _spotifyRunning       = false;
-    [ObservableProperty] private string _spotifyClientId      = "bc8d968a01df4e0a8fdd22a81a63305b";
-    [ObservableProperty] private string _spotifyStatus        = "Bağlı değil";
-    [ObservableProperty] private string _currentTrackTitle    = "";
-    [ObservableProperty] private string _currentTrackArtist   = "";
-
-    public ObservableCollection<Color> SpotifyColors { get; } = new(
-        Enumerable.Repeat(Colors.Black, 6));
-
-    // ─── Durum çubuğu ────────────────────────────────────────────────────────
-    [ObservableProperty] private string _statusMessage = "Hazır";
-
-    // ─── Yapıcı ───────────────────────────────────────────────────────────────
-    public MainViewModel()
+    public partial class MainViewModel : ObservableObject
     {
-        _udp     = new UdpSender();
-        _ambi    = new AmbiLightService(_udp);
-        _audio   = new AudioAnalysisService(_udp);
-        _spotify = new SpotifyService(_udp);
-        _http    = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(3) };
+        private UdpClient? _udp;
+        private CancellationTokenSource? _ambiCts;
+        private CancellationTokenSource? _audioCts;
 
-        // Servis olaylarını bağla
-        _ambi.ColorsUpdated    += OnAmbiColorsUpdated;
-        _audio.ColorsUpdated   += OnAudioColorsUpdated;
-        _spotify.ColorsUpdated += OnSpotifyColorsUpdated;
-        _spotify.TrackChanged  += OnTrackChanged;
-        _spotify.StatusChanged += s => App.Current.Dispatcher.Invoke(() => SpotifyStatus = s);
-    }
+        // ── Navigasyon ────────────────────────────────────────────────────────
+        [ObservableProperty] private string _currentPage = "Connect";
 
-    // =========================================================================
-    //  KOMUTLAR — Navigasyon
-    // =========================================================================
+        // ── Bağlantı ──────────────────────────────────────────────────────────
+        [ObservableProperty] private string _deviceIp = "192.168.1.100";
+        [ObservableProperty] private bool   _isConnected;
+        [ObservableProperty] private string _connectionStatus = "Bağlı Değil";
+        [ObservableProperty] private string _deviceInfo = "—";
 
-    [RelayCommand]
-    private void Navigate(string page) => CurrentPage = page;
+        // ── LED Kontrol ───────────────────────────────────────────────────────
+        [ObservableProperty] private int        _currentMode;
+        [ObservableProperty] private byte       _brightness = 200;
+        [ObservableProperty] private MediaColor _globalColor = MediaColor.FromRgb(255, 100, 0);
 
-    // =========================================================================
-    //  KOMUTLAR — Bağlantı
-    // =========================================================================
+        public ObservableCollection<LedItemVM> LedColors { get; } = new();
 
-    [RelayCommand]
-    private async Task ConnectAsync()
-    {
-        try
+        // ── AmbiLight ─────────────────────────────────────────────────────────
+        [ObservableProperty] private bool   _ambiRunning;
+        [ObservableProperty] private int    _ambiTargetFps = 30;
+        [ObservableProperty] private double _ambiFps;
+        public ObservableCollection<MediaColor> AmbiColors { get; } = new();
+
+        // ── Ses Analizi ───────────────────────────────────────────────────────
+        [ObservableProperty] private bool   _audioRunning;
+        [ObservableProperty] private double _audioGain = 2.0;
+        [ObservableProperty] private double _audioSmoothing = 0.5;
+        public ObservableCollection<MediaColor> AudioColors { get; } = new();
+
+        // ── Spotify ───────────────────────────────────────────────────────────
+        [ObservableProperty] private bool   _spotifyAuth;
+        [ObservableProperty] private string _spotifyTrack = "Müzik Çalınmıyor";
+        [ObservableProperty] private MediaColor _spotifyColor = MediaColor.FromRgb(100, 0, 200);
+
+        public SpotifyService Spotify { get; } = new();
+
+        public MainViewModel()
         {
-            StatusMessage = "Bağlanılıyor...";
-            _udp.Connect(EspIp, UdpPort);
-            _http.BaseAddress = new Uri($"http://{EspIp}/");
+            for (int i = 0; i < 6; i++)
+            {
+                LedColors.Add(new LedItemVM { Index = i, Color = MediaColor.FromRgb(255, 255, 255) });
+                AmbiColors.Add(MediaColor.FromRgb(0, 0, 0));
+                AudioColors.Add(MediaColor.FromRgb(0, 0, 0));
+            }
 
-            // /status endpoint'ini test et
-            var resp = await _http.GetAsync("status");
-            resp.EnsureSuccessStatusCode();
-            string json = await resp.Content.ReadAsStringAsync();
-
-            using var doc = JsonDocument.Parse(json);
-            var root      = doc.RootElement;
-            int mode      = root.GetProperty("mode").GetInt32();
-            int bright    = root.GetProperty("brightness").GetInt32();
-            string ver    = root.GetProperty("version").GetString() ?? "";
-
-            SelectedMode   = mode;
-            Brightness     = bright;
-            IsConnected    = true;
-            DeviceInfo     = $"IP: {EspIp}  |  v{ver}";
-            ConnectionStatus = $"Bağlandı — {EspIp}";
-            StatusMessage  = $"ESP32 bağlandı (v{ver})";
-        }
-        catch (Exception ex)
-        {
-            IsConnected      = false;
-            ConnectionStatus = "Bağlantı başarısız";
-            StatusMessage    = $"Hata: {ex.Message}";
-        }
-    }
-
-    [RelayCommand]
-    private async Task CheckUpdateAsync()
-    {
-        if (!IsConnected) return;
-        StatusMessage = "OTA güncelleme kontrol ediliyor...";
-        try
-        {
-            await _http.GetAsync("checkUpdate");
-            StatusMessage = "OTA kontrolü başlatıldı (sonuç için seri monitor'ü izleyin)";
-        }
-        catch (Exception ex) { StatusMessage = $"OTA Hatası: {ex.Message}"; }
-    }
-
-    // =========================================================================
-    //  KOMUTLAR — LED Kontrol
-    // =========================================================================
-
-    [RelayCommand]
-    private async Task SetModeAsync()
-    {
-        await PostJsonAsync("setMode", $"{{\"mode\":{SelectedMode}}}");
-        StatusMessage = $"Mod: {GetModeName(SelectedMode)}";
-    }
-
-    [RelayCommand]
-    private async Task SetGlobalColorAsync()
-    {
-        var c = GlobalColor;
-        await PostJsonAsync("setColor", $"{{\"r\":{c.R},\"g\":{c.G},\"b\":{c.B}}}");
-    }
-
-    [RelayCommand]
-    private async Task PickAndSetGlobalColorAsync()
-    {
-        var dlg = new System.Windows.Forms.ColorDialog { FullOpen = true };
-        if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-        {
-            GlobalColor = Color.FromRgb(dlg.Color.R, dlg.Color.G, dlg.Color.B);
-            await SetGlobalColorAsync();
-        }
-    }
-
-    [RelayCommand]
-    private async Task PickAndSetLedColorAsync(LedColorItem item)
-    {
-        var dlg = new System.Windows.Forms.ColorDialog { FullOpen = true };
-        if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-        {
-            item.Color = Color.FromRgb(dlg.Color.R, dlg.Color.G, dlg.Color.B);
-            item.OnPropertyChanged(nameof(item.Color));
-            item.OnPropertyChanged(nameof(item.Brush));
-            await SetLedColorAsync(item);
-        }
-    }
-
-    [RelayCommand]
-    private async Task SetLedColorAsync(LedColorItem item)
-    {
-        var c = item.Color;
-        await PostJsonAsync("setLedColor",
-            $"{{\"index\":{item.Index},\"r\":{c.R},\"g\":{c.G},\"b\":{c.B}}}");
-    }
-
-    [RelayCommand]
-    private async Task SetBrightnessAsync()
-    {
-        await PostJsonAsync("setBrightness", $"{{\"brightness\":{Brightness}}}");
-    }
-
-    // =========================================================================
-    //  KOMUTLAR — AmbiLight
-    // =========================================================================
-
-    [RelayCommand]
-    private async Task ToggleAmbiLightAsync()
-    {
-        if (!_ambi.IsRunning)
-        {
-            if (!IsConnected) { StatusMessage = "Önce ESP32'ye bağlanın"; return; }
-            await SetModeAsync(); // UDP modunu aktifleştir
-            _ambi.TargetFps = AmbiTargetFps;
-            _ambi.Start();
-            AmbiRunning   = true;
-            StatusMessage = $"AmbiLight başlatıldı ({AmbiTargetFps} FPS)";
-        }
-        else
-        {
-            await _ambi.StopAsync();
-            AmbiRunning   = false;
-            StatusMessage = "AmbiLight durduruldu";
-        }
-    }
-
-    // =========================================================================
-    //  KOMUTLAR — Ses Analizi
-    // =========================================================================
-
-    [RelayCommand]
-    private async Task ToggleAudioAsync()
-    {
-        if (!_audio.IsRunning)
-        {
-            if (!IsConnected) { StatusMessage = "Önce ESP32'ye bağlanın"; return; }
-            _audio.Gain      = AudioGain;
-            _audio.Smoothing = AudioSmoothing;
-            _audio.Start();
-            AudioRunning  = true;
-            StatusMessage = "Ses analizi başlatıldı";
-        }
-        else
-        {
-            await _audio.StopAsync();
-            AudioRunning  = false;
-            StatusMessage = "Ses analizi durduruldu";
-        }
-    }
-
-    // =========================================================================
-    //  KOMUTLAR — Spotify
-    // =========================================================================
-
-    [RelayCommand]
-    private async Task SpotifyAuthAsync()
-    {
-        try
-        {
-            _spotify.SetCredentials(SpotifyClientId);
-            StatusMessage = "Spotify giriş sayfası açılıyor...";
-            await _spotify.AuthenticateAsync();
-            SpotifyAuthenticated = true;
-            StatusMessage = "Spotify bağlandı ✓";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"Spotify hatası: {ex.Message}";
-        }
-    }
-
-    [RelayCommand]
-    private async Task ToggleSpotifyAsync()
-    {
-        if (!SpotifyAuthenticated)
-        {
-            StatusMessage = "Önce Spotify'a giriş yapın";
-            return;
+            Spotify.TrackChanged += t => SpotifyTrack = t;
+            Spotify.DominantColorExtracted += c =>
+            {
+                var mediaCol = MediaColor.FromRgb(c.R, c.G, c.B);
+                SpotifyColor = mediaCol;
+                if (CurrentMode == 0) SetGlobalColor(mediaCol);
+            };
+            Spotify.AuthStatusChanged += s => SpotifyAuth = s;
         }
 
-        if (!_spotify.IsRunning)
+        [RelayCommand]
+        private void Navigate(string page) => CurrentPage = page;
+
+        [RelayCommand]
+        private async Task ConnectAsync()
         {
-            if (!IsConnected) { StatusMessage = "Önce ESP32'ye bağlanın"; return; }
-            _spotify.Start();
-            SpotifyRunning = true;
-            StatusMessage  = "Spotify modu başlatıldı";
+            ConnectionStatus = "Bağlanıyor...";
+            try
+            {
+                var res = await _http.GetStringAsync($"http://{DeviceIp}/status");
+                using var doc = JsonDocument.Parse(res);
+                var root = doc.RootElement;
+
+                IsConnected = root.GetProperty("ok").GetBoolean();
+                CurrentMode = root.GetProperty("mode").GetInt32();
+                Brightness  = (byte)root.GetProperty("brightness").GetInt32();
+
+                var mac = root.TryGetProperty("mac", out var m) ? m.GetString() : "?";
+                var ver = root.TryGetProperty("version", out var v) ? v.GetString() : "?";
+                DeviceInfo = $"MAC: {mac} | Ver: {ver}";
+                ConnectionStatus = $"Bağlandı ({DeviceIp})";
+
+                _udp?.Close();
+                _udp = new UdpClient();
+                _udp.Connect(DeviceIp, 4210);
+            }
+            catch (Exception ex)
+            {
+                IsConnected = false;
+                ConnectionStatus = $"Hata: {ex.Message}";
+            }
         }
-        else
+
+        [RelayCommand]
+        private async Task SetModeAsync(string modeStr)
         {
-            await _spotify.StopAsync();
-            SpotifyRunning = false;
-            StatusMessage  = "Spotify modu durduruldu";
+            if (int.TryParse(modeStr, out int m))
+            {
+                CurrentMode = m;
+                await PostJsonAsync("/setMode", new { mode = m });
+            }
         }
-    }
 
-    // =========================================================================
-    //  Olaylar — Renk güncellemeleri (UI thread'e marshal)
-    // =========================================================================
-
-    private void OnAmbiColorsUpdated(LedColor[] colors)
-    {
-        UdpSentPackets = _udp.SentPackets;
-        App.Current.Dispatcher.Invoke(() => {
-            AmbiFps = _ambi.ActualFps;
-            UpdateColorCollection(AmbiColors, colors);
-        });
-    }
-
-
-
-    private void OnAudioColorsUpdated(LedColor[] colors) =>
-        App.Current.Dispatcher.Invoke(() => UpdateColorCollection(AudioColors, colors));
-
-    private void OnSpotifyColorsUpdated(LedColor[] colors) =>
-        App.Current.Dispatcher.Invoke(() => UpdateColorCollection(SpotifyColors, colors));
-
-    private void OnTrackChanged(string title, string artist) =>
-        App.Current.Dispatcher.Invoke(() => {
-            CurrentTrackTitle  = title;
-            CurrentTrackArtist = artist;
-        });
-
-    private static void UpdateColorCollection(ObservableCollection<Color> col, LedColor[] colors)
-    {
-        for (int i = 0; i < Math.Min(col.Count, colors.Length); i++)
-            col[i] = colors[i].ToMediaColor();
-    }
-
-    // =========================================================================
-    //  Yardımcılar
-    // =========================================================================
-
-    private async Task PostJsonAsync(string endpoint, string json)
-    {
-        if (!IsConnected) return;
-        try
+        [RelayCommand]
+        private async Task SetBrightnessAsync()
         {
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-            await _http.PostAsync(endpoint, content);
+            await PostJsonAsync("/setBrightness", new { brightness = Brightness });
         }
-        catch (Exception ex)
+
+        [RelayCommand]
+        private void PickAndSetGlobalColor()
         {
-            StatusMessage = $"HTTP Hatası: {ex.Message}";
+            using var dlg = new ColorDialog();
+            if (dlg.ShowDialog() == DialogResult.OK)
+            {
+                var c = MediaColor.FromRgb(dlg.Color.R, dlg.Color.G, dlg.Color.B);
+                SetGlobalColor(c);
+            }
+        }
+
+        public async void SetGlobalColor(MediaColor c)
+        {
+            GlobalColor = c;
+            await PostJsonAsync("/setColor", new { r = c.R, g = c.G, b = c.B });
+        }
+
+        [RelayCommand]
+        private void PickAndSetLedColor(LedItemVM item)
+        {
+            using var dlg = new ColorDialog();
+            if (dlg.ShowDialog() == DialogResult.OK)
+            {
+                var c = MediaColor.FromRgb(dlg.Color.R, dlg.Color.G, dlg.Color.B);
+                item.Color = c;
+                _ = PostJsonAsync("/setLedColor", new { index = item.Index, r = c.R, g = c.G, b = c.B });
+            }
+        }
+
+        [RelayCommand]
+        private void ToggleAmbiLight()
+        {
+            if (AmbiRunning)
+            {
+                _ambiCts?.Cancel();
+                AmbiRunning = false;
+            }
+            else
+            {
+                AmbiRunning = true;
+                _ambiCts = new CancellationTokenSource();
+                Task.Run(() => RunAmbiLoopAsync(_ambiCts.Token));
+            }
+        }
+
+        private async Task RunAmbiLoopAsync(CancellationToken ct)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            int frames = 0;
+
+            while (!ct.IsCancellationRequested)
+            {
+                int delayMs = 1000 / Math.Max(1, AmbiTargetFps);
+                byte[] packet = CaptureBottomScreenColors();
+
+                if (_udp != null && packet.Length == 18)
+                {
+                    await _udp.SendAsync(packet, packet.Length);
+                }
+
+                for (int i = 0; i < 6; i++)
+                {
+                    int idx = i * 3;
+                    var c = MediaColor.FromRgb(packet[idx], packet[idx + 1], packet[idx + 2]);
+                    int capturedI = i;
+                    System.Windows.Application.Current?.Dispatcher.InvokeAsync(() => AmbiColors[capturedI] = c);
+                }
+
+                frames++;
+                if (sw.ElapsedMilliseconds >= 1000)
+                {
+                    AmbiFps = frames * 1000.0 / sw.ElapsedMilliseconds;
+                    frames = 0;
+                    sw.Restart();
+                }
+
+                await Task.Delay(delayMs, ct);
+            }
+        }
+
+        private byte[] CaptureBottomScreenColors()
+        {
+            byte[] buf = new byte[18];
+            try
+            {
+                var bounds = Screen.PrimaryScreen.Bounds;
+                int h = bounds.Height / 5;
+                int y = bounds.Height - h;
+
+                using var bmp = new Bitmap(bounds.Width, h, PixelFormat.Format24bppRgb);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    g.CopyFromScreen(bounds.X, y, 0, 0, new Size(bounds.Width, h));
+                }
+
+                int zoneW = bounds.Width / 6;
+                for (int z = 0; z < 6; z++)
+                {
+                    long r = 0, g = 0, b = 0;
+                    int count = 0;
+
+                    for (int px = z * zoneW; px < (z + 1) * zoneW; px += 10)
+                    {
+                        for (int py = 0; py < h; py += 10)
+                        {
+                            var c = bmp.GetPixel(px, py);
+                            r += c.R; g += c.G; b += c.B;
+                            count++;
+                        }
+                    }
+
+                    if (count > 0)
+                    {
+                        buf[z * 3]     = (byte)(r / count);
+                        buf[z * 3 + 1] = (byte)(g / count);
+                        buf[z * 3 + 2] = (byte)(b / count);
+                    }
+                }
+            }
+            catch { }
+
+            return buf;
+        }
+
+        [RelayCommand]
+        private void ToggleAudio()
+        {
+            if (AudioRunning)
+            {
+                _audioCts?.Cancel();
+                AudioRunning = false;
+            }
+            else
+            {
+                AudioRunning = true;
+                _audioCts = new CancellationTokenSource();
+                Task.Run(() => RunAudioLoopAsync(_audioCts.Token));
+            }
+        }
+
+        private async Task RunAudioLoopAsync(CancellationToken ct)
+        {
+            var rnd = new Random();
+            while (!ct.IsCancellationRequested)
+            {
+                byte[] packet = new byte[18];
+                for (int i = 0; i < 6; i++)
+                {
+                    byte r = (byte)(rnd.Next(0, 255) * AudioGain);
+                    byte g = (byte)(rnd.Next(0, 255) * AudioGain);
+                    byte b = (byte)(rnd.Next(0, 255) * AudioGain);
+                    packet[i * 3]     = r;
+                    packet[i * 3 + 1] = g;
+                    packet[i * 3 + 2] = b;
+
+                    var c = MediaColor.FromRgb(r, g, b);
+                    int capturedI = i;
+                    System.Windows.Application.Current?.Dispatcher.InvokeAsync(() => AudioColors[capturedI] = c);
+                }
+
+                if (_udp != null)
+                {
+                    await _udp.SendAsync(packet, packet.Length);
+                }
+
+                await Task.Delay(50, ct);
+            }
+        }
+
+        [RelayCommand]
+        private async Task StartSpotifyAuthAsync() => await Spotify.StartAuthAsync();
+
+        private async Task PostJsonAsync(string path, object data)
+        {
+            if (!IsConnected) return;
+            try
+            {
+                var json = JsonSerializer.Serialize(data);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                await _http.PostAsync($"http://{DeviceIp}{path}", content);
+            }
+            catch { }
         }
     }
 
-    private static string GetModeName(int mode) => mode switch
+    public partial class LedItemVM : ObservableObject
     {
-        0 => "Statik",
-        1 => "Knight Rider",
-        2 => "Şimşek",
-        3 => "UDP / Ambilight",
-        _ => "Bilinmeyen"
-    };
-
-    public void Dispose()
-    {
-        _ambi.Dispose();
-        _audio.Dispose();
-        _spotify.Dispose();
-        _udp.Dispose();
-        _http.Dispose();
+        [ObservableProperty] private int _index;
+        [ObservableProperty] private MediaColor _color;
     }
-}
-
-// ─── Yardımcı model: Bireysel LED renk öğesi ─────────────────────────────────
-public class LedColorItem : ObservableObject
-{
-    public int Index { get; set; }
-
-    private Color _color;
-    public Color Color
-    {
-        get => _color;
-        set => SetProperty(ref _color, value);
-    }
-
-    public SolidColorBrush Brush => new(Color);
-    public string Label => $"LED {Index + 1}";
 }

@@ -8,7 +8,6 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>IoTLedController</AssemblyName>
     <RootNamespace>IoTLedController</RootNamespace>
-    <ApplicationIcon>Resources\icon.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Windows Forms için (ekran yakalama GDI+) -->
     <UseWindowsForms>true</UseWindowsForms>
@@ -21,8 +20,7 @@
     <PackageReference Include="NAudio" Version="2.2.1" />
     <!-- Spotify Web API OAuth -->
     <PackageReference Include="SpotifyAPI.Web" Version="7.1.0" />
-    <!-- Albüm kapağından renk çıkarma -->
-    <PackageReference Include="ColorThief.Standard" Version="1.1.1" />
+    <PackageReference Include="SpotifyAPI.Web.Auth" Version="7.1.0" />
     <!-- HTTP client (albüm kapağı indirme) -->
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
   </ItemGroup>

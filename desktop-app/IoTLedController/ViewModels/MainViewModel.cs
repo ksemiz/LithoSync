@@ -26,7 +26,6 @@ namespace IoTLedController.ViewModels
         private UdpClient? _udp;
         private CancellationTokenSource? _ambiCts;
         private WasapiLoopbackCapture? _audioCapture;
-        private readonly float[] _smoothedBands = new float[6];
 
         // ── Navigasyon ────────────────────────────────────────────────────────
         [ObservableProperty] private string _currentPage = "Connect";
@@ -38,7 +37,7 @@ namespace IoTLedController.ViewModels
         [ObservableProperty] private string _deviceInfo = "—";
         [ObservableProperty] private bool   _isSearching;
 
-        // ── LED Kontrol ───────────────────────────────────────────────────────
+        // ── LED Modu ──────────────────────────────────────────────────────────
         private int _currentMode;
         public int CurrentMode
         {
@@ -61,7 +60,7 @@ namespace IoTLedController.ViewModels
         public bool IsMode2 { get => CurrentMode == 2; set { if (value && CurrentMode != 2) _ = SetModeAsync("2"); } }
         public bool IsMode3 { get => CurrentMode == 3; set { if (value && CurrentMode != 3) _ = SetModeAsync("3"); } }
 
-        // Animasyon rengi (Knight Rider mod=1 ve Thunder mod=2 için)
+        // Animasyon rengi (Knight Rider / Thunder için)
         private MediaColor _animColor = MediaColor.FromRgb(255, 0, 0);
         public MediaColor AnimColor
         {
@@ -73,7 +72,6 @@ namespace IoTLedController.ViewModels
             }
         }
 
-        // Sadece mod 1 veya 2'de renk seçici görünsün
         public System.Windows.Visibility AnimColorVisible =>
             (CurrentMode == 1 || CurrentMode == 2)
                 ? System.Windows.Visibility.Visible
@@ -91,16 +89,27 @@ namespace IoTLedController.ViewModels
 
         // ── Ses Analizi ───────────────────────────────────────────────────────
         [ObservableProperty] private bool   _audioRunning;
-        [ObservableProperty] private double _audioGain = 3.0;
+        [ObservableProperty] private double _audioGain      = 3.0;
         [ObservableProperty] private double _audioSmoothing = 0.6;
         public ObservableCollection<MediaColor> AudioColors { get; } = new();
 
+        // Ses işleme state
+        private float _smoothBass;
+        private float _smoothEnergy;
+        private float _hue;
+        private float _beatBrightness;
+        private long  _lastFftMs;
+        private readonly object _fftLock = new();
+        private float[] _fftAccum = new float[2048];
+        private int     _fftAccumPos = 0;
+
         // ── Spotify ───────────────────────────────────────────────────────────
-        [ObservableProperty] private bool   _spotifyAuth;
-        [ObservableProperty] private string _spotifyTrack = "Müzik Çalınmıyor";
-        [ObservableProperty] private MediaColor _spotifyColor = MediaColor.FromRgb(100, 0, 200);
+        [ObservableProperty] private bool        _spotifyAuth;
+        [ObservableProperty] private string      _spotifyTrack = "Müzik Çalınmıyor";
+        [ObservableProperty] private MediaColor  _spotifyColor = MediaColor.FromRgb(100, 0, 200);
         public SpotifyService Spotify { get; } = new();
 
+        // ─────────────────────────────────────────────────────────────────────
         public MainViewModel()
         {
             for (int i = 0; i < 6; i++)
@@ -109,7 +118,7 @@ namespace IoTLedController.ViewModels
                 AmbiColors.Add(MediaColor.FromRgb(20, 20, 40));
                 AudioColors.Add(MediaColor.FromRgb(20, 20, 40));
             }
-            Spotify.TrackChanged += t => SpotifyTrack = t;
+            Spotify.TrackChanged           += t => SpotifyTrack = t;
             Spotify.DominantColorExtracted += c =>
             {
                 var mc = MediaColor.FromRgb(c.R, c.G, c.B);
@@ -123,6 +132,7 @@ namespace IoTLedController.ViewModels
         [RelayCommand]
         private void Navigate(string page) => CurrentPage = page;
 
+        // ── Cihaz Keşif ───────────────────────────────────────────────────────
         [RelayCommand]
         private async Task DiscoverDeviceAsync()
         {
@@ -158,15 +168,15 @@ namespace IoTLedController.ViewModels
             ConnectionStatus = "Bağlanıyor...";
             try
             {
-                var res = await _http.GetStringAsync($"http://{DeviceIp}/status");
-                using var doc = JsonDocument.Parse(res);
+                var res  = await _http.GetStringAsync($"http://{DeviceIp}/status");
+                using var doc  = JsonDocument.Parse(res);
                 var root = doc.RootElement;
                 IsConnected = root.GetProperty("ok").GetBoolean();
                 CurrentMode = root.GetProperty("mode").GetInt32();
                 Brightness  = (byte)root.GetProperty("brightness").GetInt32();
                 var mac = root.TryGetProperty("mac", out var m) ? m.GetString() : "?";
                 var ver = root.TryGetProperty("version", out var v) ? v.GetString() : "?";
-                DeviceInfo = $"MAC: {mac} | Ver: {ver}";
+                DeviceInfo      = $"MAC: {mac} | Ver: {ver}";
                 ConnectionStatus = $"✅ Bağlandı ({DeviceIp})";
                 _udp?.Close();
                 _udp = new UdpClient();
@@ -174,7 +184,7 @@ namespace IoTLedController.ViewModels
             }
             catch (Exception ex)
             {
-                IsConnected = false;
+                IsConnected      = false;
                 ConnectionStatus = $"❌ Hata: {ex.Message}";
             }
         }
@@ -189,7 +199,7 @@ namespace IoTLedController.ViewModels
             if (r == System.Windows.MessageBoxResult.Yes)
             {
                 await PostJsonAsync("/reset", new { });
-                IsConnected = false;
+                IsConnected      = false;
                 ConnectionStatus = "Wi-Fi Sıfırlandı. 'IoT-LED-Setup' ağına bağlanın.";
             }
         }
@@ -241,9 +251,9 @@ namespace IoTLedController.ViewModels
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // AMBILIGHT — Ekran Okuma
-        // ─────────────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════════════
+        // AMBILIGHT — Ekranın TAMAMI 320×180 küçük kopyaya indir, 6 dikey zona
+        // ═════════════════════════════════════════════════════════════════════
         [RelayCommand]
         private async Task ToggleAmbiLightAsync()
         {
@@ -263,22 +273,18 @@ namespace IoTLedController.ViewModels
 
         private async Task RunAmbiLoopAsync(CancellationToken ct)
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var sw     = System.Diagnostics.Stopwatch.StartNew();
             int frames = 0;
             while (!ct.IsCancellationRequested)
             {
                 try
                 {
-                    int delayMs = 1000 / Math.Max(1, AmbiTargetFps);
-                    byte[] packet = CaptureScreenColors();
+                    int    delayMs = 1000 / Math.Max(1, AmbiTargetFps);
+                    byte[] packet  = CaptureFullScreenColors();
 
-                    // UDP gönder (bağlı değilse es geç)
                     if (_udp != null)
-                    {
                         try { _udp.Send(packet, packet.Length); } catch { }
-                    }
 
-                    // UI önizleme güncelle
                     var colors = new MediaColor[6];
                     for (int i = 0; i < 6; i++)
                         colors[i] = MediaColor.FromRgb(packet[i*3], packet[i*3+1], packet[i*3+2]);
@@ -292,84 +298,90 @@ namespace IoTLedController.ViewModels
                     if (sw.ElapsedMilliseconds >= 1000)
                     {
                         AmbiFps = Math.Round(frames * 1000.0 / sw.ElapsedMilliseconds, 1);
-                        frames = 0; sw.Restart();
+                        frames  = 0;
+                        sw.Restart();
                     }
                     await Task.Delay(delayMs, ct);
                 }
                 catch (OperationCanceledException) { break; }
-                catch { await Task.Delay(100, ct); } // hata → kısa bekleme, devam
+                catch { await Task.Delay(100, ct); }
             }
         }
 
         /// <summary>
-        /// Ekranın alt şeridini GDI+ ile okur, 6 zona böler, ortalama renk hesaplar.
-        /// Gamma düzeltmesi ile canlı renkler.
+        /// Tüm ekranı 320×180 küçük bitmap'e çeker, 6 dikey zone'a böler,
+        /// her zone'un ortalama rengini hesaplar. Gamma düzeltmesi ile canlı.
         /// </summary>
-        private byte[] CaptureScreenColors()
+        private byte[] CaptureFullScreenColors()
         {
             var buf = new byte[18];
             try
             {
-                var screen = Screen.PrimaryScreen ?? Screen.AllScreens[0];
-                var b = screen.Bounds;
+                var screen  = Screen.PrimaryScreen ?? Screen.AllScreens[0];
+                var b       = screen.Bounds;
+                const int W = 320;
+                const int H = 180;
 
-                // Alt %15'i al
-                int stripH = Math.Max(4, b.Height * 15 / 100);
-                int captureY = b.Y + b.Height - stripH;
+                // Ekranı küçük bitmap'e çek (tüm ekran, küçük = hızlı)
+                using var bmp = new Bitmap(W, H, PixelFormat.Format24bppRgb);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Low;
+                    // Önce native çözünürlükte yakala
+                    using var full = new Bitmap(b.Width, b.Height, PixelFormat.Format24bppRgb);
+                    using (var gf = Graphics.FromImage(full))
+                        gf.CopyFromScreen(b.X, b.Y, 0, 0, b.Size);
+                    // Küçük boyuta ölçekle
+                    g.DrawImage(full, 0, 0, W, H);
+                }
 
-                using var bmp = new Bitmap(b.Width, stripH, PixelFormat.Format24bppRgb);
-                using var g = Graphics.FromImage(bmp);
-                g.CopyFromScreen(b.X, captureY, 0, 0, new Size(b.Width, stripH));
-
-                // LockBits ile hızlı piksel erişimi (safe, no unsafe needed)
                 var bmpData = bmp.LockBits(
-                    new Rectangle(0, 0, bmp.Width, stripH),
+                    new Rectangle(0, 0, W, H),
                     ImageLockMode.ReadOnly,
                     PixelFormat.Format24bppRgb);
 
                 int stride = bmpData.Stride;
-                int zoneW = bmp.Width / 6;
-                var rawBytes = new byte[stride * stripH];
-                Marshal.Copy(bmpData.Scan0, rawBytes, 0, rawBytes.Length);
+                var raw    = new byte[stride * H];
+                Marshal.Copy(bmpData.Scan0, raw, 0, raw.Length);
                 bmp.UnlockBits(bmpData);
 
+                int zoneW = W / 6;
                 for (int z = 0; z < 6; z++)
                 {
                     long r = 0, gv = 0, bv = 0;
-                    int count = 0;
-                    int xStart = z * zoneW;
-                    int xEnd = xStart + zoneW;
+                    int  cnt    = 0;
+                    int  xStart = z * zoneW;
+                    int  xEnd   = xStart + zoneW;
 
-                    for (int py = 0; py < stripH; py += 8)
-                    {
-                        for (int px = xStart; px < xEnd; px += 10)
+                    for (int py = 0; py < H; py += 5)
+                        for (int px = xStart; px < xEnd; px += 5)
                         {
                             int idx = py * stride + px * 3;
-                            bv += rawBytes[idx];
-                            gv += rawBytes[idx + 1];
-                            r  += rawBytes[idx + 2];
-                            count++;
+                            bv += raw[idx];
+                            gv += raw[idx + 1];
+                            r  += raw[idx + 2];
+                            cnt++;
                         }
-                    }
 
-                    if (count > 0)
+                    if (cnt > 0)
                     {
-                        buf[z*3]   = Gamma((double)r / count);
-                        buf[z*3+1] = Gamma((double)gv / count);
-                        buf[z*3+2] = Gamma((double)bv / count);
+                        buf[z*3]   = Gamma((double)r  / cnt);
+                        buf[z*3+1] = Gamma((double)gv / cnt);
+                        buf[z*3+2] = Gamma((double)bv / cnt);
                     }
                 }
             }
-            catch { /* Ekran okuma hatası → siyah döner */ }
+            catch { }
             return buf;
         }
 
         private static byte Gamma(double v) =>
             (byte)(Math.Pow(v / 255.0, 0.55) * 255.0);
 
-        // ─────────────────────────────────────────────────────────────────────
-        // SES ANALİZİ — NAudio WASAPI + FFT
-        // ─────────────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════════════
+        // SES ANALİZİ — 2 Değer: BASS + ENERGY
+        // Pırpır yok: asimetrik smoothing + beat pulse + hue shift
+        // ═════════════════════════════════════════════════════════════════════
         [RelayCommand]
         private async Task ToggleAudioAsync()
         {
@@ -389,13 +401,9 @@ namespace IoTLedController.ViewModels
         private void StopAudioCapture()
         {
             try { _audioCapture?.StopRecording(); } catch { }
-            try { _audioCapture?.Dispose(); } catch { }
+            try { _audioCapture?.Dispose();       } catch { }
             _audioCapture = null;
         }
-
-        private readonly object _fftLock = new();
-        private float[] _fftAccum = new float[2048];
-        private int _fftAccumPos = 0;
 
         private void StartAudioCapture()
         {
@@ -410,20 +418,17 @@ namespace IoTLedController.ViewModels
                     if (!AudioRunning) return;
                     try
                     {
-                        // 32-bit float örnekleri oku
                         int floatCount = e.BytesRecorded / 4;
                         lock (_fftLock)
                         {
-                            for (int i = 0; i < floatCount; i += ch) // her frame bir kez (ch kanal atla)
+                            for (int i = 0; i < floatCount; i += ch)
                             {
-                                // Stereo: sol+sağ ortalaması
                                 float sample = 0;
                                 for (int c2 = 0; c2 < ch && i + c2 < floatCount; c2++)
                                     sample += BitConverter.ToSingle(e.Buffer, (i + c2) * 4);
                                 sample /= ch;
 
                                 _fftAccum[_fftAccumPos++] = sample;
-
                                 if (_fftAccumPos >= 2048)
                                 {
                                     ProcessFft(_fftAccum, sr);
@@ -434,7 +439,6 @@ namespace IoTLedController.ViewModels
                     }
                     catch { }
                 };
-
                 _audioCapture.StartRecording();
             }
             catch (Exception ex)
@@ -442,7 +446,7 @@ namespace IoTLedController.ViewModels
                 AudioRunning = false;
                 System.Windows.Application.Current?.Dispatcher.InvokeAsync(() =>
                     System.Windows.MessageBox.Show(
-                        $"Ses yakalama başlatılamadı:\n{ex.Message}\n\nWindows Ses Ayarları → Kayıtlı Cihazlar → Stereo Mix etkin olmalı.",
+                        $"Ses yakalama başlatılamadı:\n{ex.Message}\n\nWindows Ses → Kayıt → Stereo Mix etkin olmalı.",
                         "Ses Hatası"));
             }
         }
@@ -459,53 +463,94 @@ namespace IoTLedController.ViewModels
             FftInPlace(cx);
 
             double binHz = (double)sampleRate / 2048;
+            float  gain  = (float)Math.Clamp(AudioGain, 0.5, 20.0);
 
-            // 6 frekans bandı: Sub-bass / Bass / Low-mid / Mid / High-mid / Treble
-            double[] lo  = { 20,   80,  250,  800, 2500, 6000 };
-            double[] hi  = { 80,  250,  800, 2500, 6000, 20000 };
-            byte[]   cr  = { 220,  255,  255,   0,   0,  160 };
-            byte[]   cg  = {  20,   80,  200, 220, 120,   32 };
-            byte[]   cb  = {  60,    0,    0,  60, 255,  240 };
+            // ── 1. BASS RMS (20–300 Hz) ───────────────────────────────────────
+            int    bassLo  = Math.Max(0,    (int)(20.0  / binHz));
+            int    bassHi  = Math.Min(1023, (int)(300.0 / binHz));
+            double bassRms = 0;
+            for (int k = bassLo; k <= bassHi; k++)
+                bassRms += cx[k].Magnitude * cx[k].Magnitude;
+            bassRms = Math.Sqrt(bassRms / Math.Max(1, bassHi - bassLo + 1));
 
-            float smoothing = (float)Math.Clamp(AudioSmoothing, 0, 0.97);
-            float gain      = (float)Math.Clamp(AudioGain, 0.5, 20.0);
+            // ── 2. ENERGY — Tüm spektrum RMS ─────────────────────────────────
+            double totalRms = 0;
+            for (int k = 0; k < 1024; k++)
+                totalRms += cx[k].Magnitude * cx[k].Magnitude;
+            totalRms = Math.Sqrt(totalRms / 1024.0);
 
-            var packet = new byte[18];
+            float bassLevel   = (float)Math.Min(1.0, bassRms  * gain);
+            float energyLevel = (float)Math.Min(1.0, totalRms * gain * 0.7f);
+
+            // ── Asimetrik Smoothing: hızlı yüksel, yavaş düş → pırpır yok ────
+            float bassAtk   = bassLevel   > _smoothBass   ? 0.35f : 0.93f;
+            float energyAtk = energyLevel > _smoothEnergy ? 0.40f : 0.90f;
+            _smoothBass   = _smoothBass   * bassAtk   + bassLevel   * (1f - bassAtk);
+            _smoothEnergy = _smoothEnergy * energyAtk + energyLevel * (1f - energyAtk);
+
+            // ── Beat Detection: bass ani sıçrayış → kısa parlaklık patlaması ─
+            bool isBeat = bassLevel > _smoothBass * 1.7f && _smoothBass > 0.04f;
+            if (isBeat) _beatBrightness = Math.Min(1.0f, _beatBrightness + 0.55f);
+            else        _beatBrightness *= 0.86f;
+
+            // ── Hue Shift: bass yüksekse sıcak (kırmızı), düşükse serin (mavi) ─
+            long  nowMs     = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _lastFftMs      = nowMs;
+            // 0.02 (kırmızı/turuncu) → 0.62 (mavi/mor)
+            float targetHue = 0.02f + (1.0f - _smoothBass) * 0.60f;
+            _hue += (targetHue - _hue) * 0.04f; // çok yavaş kayar, pırpır yok
+
+            // ── Parlaklık: energy + beat pulse ─────────────────────────────────
+            float brightness = Math.Clamp(_smoothEnergy * 1.6f + _beatBrightness * 0.35f, 0f, 1f);
+
+            var (rBase, gBase, bBase) = HsvToRgb(_hue, 0.92f, brightness);
+
+            var packet   = new byte[18];
             var uiColors = new MediaColor[6];
 
+            // 6 LED aynı renk, ortadan kenarlara hafif dalga (sönme)
             for (int z = 0; z < 6; z++)
             {
-                int loIdx = Math.Max(0, (int)(lo[z] / binHz));
-                int hiIdx = Math.Min(1023, (int)(hi[z] / binHz));
-
-                double rms = 0;
-                int cnt = hiIdx - loIdx + 1;
-                for (int k = loIdx; k <= hiIdx; k++)
-                    rms += cx[k].Magnitude * cx[k].Magnitude;
-                rms = Math.Sqrt(rms / Math.Max(1, cnt));
-
-                float level = (float)Math.Min(1.0, rms * gain);
-                _smoothedBands[z] = _smoothedBands[z] * smoothing + level * (1f - smoothing);
-                float v = _smoothedBands[z];
-
-                byte r = (byte)(cr[z] * v);
-                byte g = (byte)(cg[z] * v);
-                byte b = (byte)(cb[z] * v);
-                packet[z*3] = r; packet[z*3+1] = g; packet[z*3+2] = b;
-                uiColors[z] = MediaColor.FromRgb(r, g, b);
+                float wave = 1.0f - MathF.Abs(z - 2.5f) / 6.0f * 0.25f;
+                byte  pr   = (byte)(rBase * wave);
+                byte  pg   = (byte)(gBase * wave);
+                byte  pb   = (byte)(bBase * wave);
+                packet[z*3] = pr; packet[z*3+1] = pg; packet[z*3+2] = pb;
+                uiColors[z] = MediaColor.FromRgb(pr, pg, pb);
             }
 
-            // UDP gönder
             if (_udp != null)
                 try { _udp.Send(packet, packet.Length); } catch { }
 
-            // UI güncelle
             System.Windows.Application.Current?.Dispatcher.InvokeAsync(() =>
             {
                 for (int z = 0; z < 6; z++) AudioColors[z] = uiColors[z];
             });
         }
 
+        /// <summary>HSV → RGB (h, s, v: 0-1 arası)</summary>
+        private static (byte r, byte g, byte b) HsvToRgb(float h, float s, float v)
+        {
+            if (v <= 0f) return (0, 0, 0);
+            h = h - MathF.Floor(h);
+            int   i = (int)(h * 6f);
+            float f = h * 6f - i;
+            float p = v * (1f - s);
+            float q = v * (1f - f * s);
+            float t = v * (1f - (1f - f) * s);
+            var (rf, gf, bf) = (i % 6) switch
+            {
+                0 => (v, t, p),
+                1 => (q, v, p),
+                2 => (p, v, t),
+                3 => (p, q, v),
+                4 => (t, p, v),
+                _ => (v, p, q)
+            };
+            return ((byte)(rf * 255f), (byte)(gf * 255f), (byte)(bf * 255f));
+        }
+
+        /// <summary>Cooley-Tukey FFT — in-place iterative</summary>
         private static void FftInPlace(Complex[] a)
         {
             int n = a.Length;
@@ -514,21 +559,21 @@ namespace IoTLedController.ViewModels
                 int bit = n >> 1;
                 for (; (j & bit) != 0; bit >>= 1) j ^= bit;
                 j ^= bit;
-                if (i < j) { var t = a[i]; a[i] = a[j]; a[j] = t; }
+                if (i < j) { var tmp = a[i]; a[i] = a[j]; a[j] = tmp; }
             }
             for (int len = 2; len <= n; len <<= 1)
             {
-                double ang = -2.0 * Math.PI / len;
-                var wlen = new Complex(Math.Cos(ang), Math.Sin(ang));
+                double ang  = -2.0 * Math.PI / len;
+                var    wlen = new Complex(Math.Cos(ang), Math.Sin(ang));
                 for (int i = 0; i < n; i += len)
                 {
                     var w = Complex.One;
-                    for (int j2 = 0; j2 < len / 2; j2++)
+                    for (int j = 0; j < len / 2; j++)
                     {
-                        var u = a[i + j2];
-                        var vv = a[i + j2 + len/2] * w;
-                        a[i + j2]         = u + vv;
-                        a[i + j2 + len/2] = u - vv;
+                        var u = a[i + j];
+                        var vv = a[i + j + len/2] * w;
+                        a[i + j]         = u + vv;
+                        a[i + j + len/2] = u - vv;
                         w *= wlen;
                     }
                 }
@@ -553,7 +598,7 @@ namespace IoTLedController.ViewModels
 
     public partial class LedItemVM : ObservableObject
     {
-        [ObservableProperty] private int _index;
+        [ObservableProperty] private int        _index;
         [ObservableProperty] private MediaColor _color;
     }
 }

@@ -19,27 +19,64 @@ NetworkManager::~NetworkManager() {
 }
 
 bool NetworkManager::begin() {
-    Serial.println("[NET] WiFiManager başlatılıyor...");
-    Serial.printf("[NET] AP: %s / %s\n", AP_SSID, AP_PASSWORD);
+    Serial.println("[NET] NetworkManager başlatılıyor...");
 
-    _wm->setTitle("LithoSync LED Controller");
-    _wm->setConfigPortalTimeout(180);    // 3 dk sonra portal kapanır
-    _wm->setConnectTimeout(30);          // Bağlantı denemesi için 30 sn
-    _wm->setBreakAfterConfig(true);      // Config alındıktan sonra devam et
+    // 1. Her başlatmada eski Wi-Fi ön belleğini / kayıtlarını temizle
+    _wm->resetSettings();
+    WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(true);
+    WiFi.setSleep(false);
+    delay(100);
 
-    // İnternet yokken / Kurulum modundayken KIRMIZI YANIP SÖNME callback
-    _wm->setAPCallback([](WiFiManager* myWiFiManager) {
-        Serial.println("[NET] İnternet bağlantısı yok! AP Modunda kırmızı yanıp sönüyor...");
-        for (int i = 0; i < 6; i++) {
-            ledCtrl.setGlobalColor(CRGB(255, 0, 0));
-            delay(300);
-            ledCtrl.setGlobalColor(CRGB::Black);
-            delay(300);
+    // 2. Ön tanımlı SSID ve Şifre ile bağlanmayı dene
+    String defaultSsid = DEFAULT_WIFI_SSID;
+    String defaultPass = DEFAULT_WIFI_PASS;
+
+    bool defaultConnected = false;
+
+    if (defaultSsid.length() > 0 && defaultSsid != "YOUR_WIFI_SSID") {
+        Serial.printf("[NET] Ön tanımlı Wi-Fi ağı deneniyor: %s\n", defaultSsid.c_str());
+        WiFi.begin(defaultSsid.c_str(), defaultPass.c_str());
+
+        unsigned long startAttempt = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
+            delay(500);
+            Serial.print(".");
         }
-    });
+        Serial.println();
 
-    // Müşteri için Özel Dark Glassmorphism Captive Portal Tasarımı
-    _wm->setCustomHeadElement(R"(
+        if (WiFi.status() == WL_CONNECTED) {
+            defaultConnected = true;
+            Serial.println("[NET] Ön tanımlı Wi-Fi ağına başarıyla bağlandı!");
+        } else {
+            Serial.println("[NET] Ön tanımlı ağa bağlanılamadı. Captive Portal (Hotspot) açılıyor...");
+            WiFi.disconnect(true);
+            delay(100);
+        }
+    }
+
+    // 3. Ön tanımlı ağa bağlanılamadıysa (veya placeholder kaldıysa) Captive Portal (Hotspot) aç
+    if (!defaultConnected) {
+        Serial.printf("[NET] AP Modu Başlatılıyor: %s / %s\n", AP_SSID, AP_PASSWORD);
+
+        _wm->setTitle("LithoSync LED Controller");
+        _wm->setConfigPortalTimeout(180);    // 3 dk sonra portal kapanır
+        _wm->setConnectTimeout(30);          // Bağlantı denemesi için 30 sn
+        _wm->setBreakAfterConfig(true);      // Config alındıktan sonra devam et
+
+        // İnternet yokken / Kurulum modundayken KIRMIZI YANIP SÖNME callback
+        _wm->setAPCallback([](WiFiManager* myWiFiManager) {
+            Serial.println("[NET] İnternet bağlantısı yok! AP Modunda kırmızı yanıp sönüyor...");
+            for (int i = 0; i < 6; i++) {
+                ledCtrl.setGlobalColor(CRGB(255, 0, 0));
+                delay(300);
+                ledCtrl.setGlobalColor(CRGB::Black);
+                delay(300);
+            }
+        });
+
+        // Müşteri için Özel Dark Glassmorphism Captive Portal Tasarımı
+        _wm->setCustomHeadElement(R"(
 <style>
   body { background: #0D0E1A !important; color: #E8E9F3 !important; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; margin: 0; padding: 20px; }
   h1 { font-size: 22px !important; font-weight: 800 !important; color: #6C63FF !important; text-align: center; margin-bottom: 20px; }
@@ -52,18 +89,19 @@ bool NetworkManager::begin() {
 </style>
 )");
 
-    bool connected = _wm->autoConnect(AP_SSID, AP_PASSWORD);
+        bool connected = _wm->autoConnect(AP_SSID, AP_PASSWORD);
 
-    if (!connected) {
-        Serial.println("[NET] Bağlantı başarısız! Kırmızı sinyal ile yeniden başlatılıyor...");
-        for (int i = 0; i < 5; i++) {
-            ledCtrl.setGlobalColor(CRGB::Red);
-            delay(150);
-            ledCtrl.setGlobalColor(CRGB::Black);
-            delay(150);
+        if (!connected) {
+            Serial.println("[NET] Bağlantı başarısız! Kırmızı sinyal ile yeniden başlatılıyor...");
+            for (int i = 0; i < 5; i++) {
+                ledCtrl.setGlobalColor(CRGB::Red);
+                delay(150);
+                ledCtrl.setGlobalColor(CRGB::Black);
+                delay(150);
+            }
+            ESP.restart();
+            return false;
         }
-        ESP.restart();
-        return false;
     }
 
     Serial.printf("[NET] WiFi bağlandı!\n");

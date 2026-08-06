@@ -19,6 +19,11 @@
 #define AP_PASSWORD  "12345678"        // Captive Portal şifresi
 #define HOSTNAME     "iot-led"         // mDNS: http://iot-led.local
 
+// ─── Ön Tanımlı Wi-Fi (Öncelikli Bağlantı) ──────────────────────────────────
+#define DEFAULT_WIFI_SSID     "YOUR_WIFI_SSID"      // Varsayılan Wi-Fi Adı (Placeholder)
+#define DEFAULT_WIFI_PASS     "YOUR_WIFI_PASSWORD"  // Varsayılan Wi-Fi Şifresi (Placeholder)
+
+
 // ─── OTA Güncelleme ───────────────────────────────────────────────────────────
 //  !! Placeholder — kendi GitHub repo adresinizle değiştirin !!
 #define CURRENT_VERSION    "1.0.0"

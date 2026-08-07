@@ -259,22 +259,19 @@ bool NetworkManager::begin() {
             return false;
         }
 
-        // Bağlantı başarılı — YEŞİL LED sinyali ver
+        // Bağlantı kuruldu — AP modunu temizle, sadece STA modunda kal
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_STA);
+        delay(100);
+
+        // Başarılı bağlantı — YEŞİL LED sinyali ver
         for (int i = 0; i < 3; i++) {
             ledCtrl.setGlobalColor(CRGB(0, 200, 0));
-            delay(200);
+            delay(150);
             ledCtrl.setGlobalColor(CRGB::Black);
-            delay(200);
+            delay(150);
         }
-
-        // KRİTİK: WiFiManager NVS'e kaydetti. Temiz STA modunda başlamak için restart.
-        // Bu olmadan cihaz AP+STA modunda kalır ve bağlantı birkaç dk sonra kopar.
-        Serial.println("[NET] Bağlantı bilgileri kaydedildi. Temiz STA modunda başlamak için yeniden başlatılıyor...");
-        delay(1000);
-        ESP.restart();
-        return true; // Bu satıra ulaşılmaz
     }
-
 
     Serial.printf("[NET] WiFi bağlandı!\n");
     Serial.printf("[NET] SSID : %s\n", WiFi.SSID().c_str());

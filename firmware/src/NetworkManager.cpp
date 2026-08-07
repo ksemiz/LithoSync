@@ -340,7 +340,7 @@ bool NetworkManager::begin() {
         bool connected = _wm->autoConnect(AP_SSID, AP_PASSWORD);
 
         if (!connected) {
-            Serial.println("[NET] Bağlantı başarsız! Yeniden başlatılıyor...");
+            Serial.println("[NET] Bağlantı başarısız! Yeniden başlatılıyor...");
             for (int i = 0; i < 5; i++) {
                 ledCtrl.setGlobalColor(CRGB::Red);
                 delay(150);
@@ -351,22 +351,18 @@ bool NetworkManager::begin() {
             return false;
         }
 
-        // Bağlantı başarılı — YEŞİL LED sinyali ver
+        // Bağlantı kuruldu — AP modunu temizle, sadece STA modunda kal
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_STA);
+        delay(100);
+
+        // Başarılı bağlantı — YEŞİL LED sinyali ver
         for (int i = 0; i < 3; i++) {
             ledCtrl.setGlobalColor(CRGB(0, 200, 0));
-            delay(200);
+            delay(150);
             ledCtrl.setGlobalColor(CRGB::Black);
-            delay(200);
+            delay(150);
         }
-
-        // KRİTİK: Kullanıcı captive portal'dan SSID+şifre girdi — kaydedildi.
-        // WiFiManager NVS'e yazdıktan sonra ESP'yi yeniden başlatıyoruz.
-        // Bu olmadan cihaz AP+STA modunda kalır, AP yayını STA bağlantısını bozar
-        // ve birkaç dakika sonra bağlantı kendiliğinden kesilebilir.
-        Serial.println("[NET] Bağlantı bilgileri kaydedildi. Temiz STA modunda başlamak için yeniden başlatılıyor...");
-        delay(1000);
-        ESP.restart();
-        return true; // Bu satıra ulaşılmaz, sadece derleyici için
     }
 
     Serial.printf("[NET] WiFi bağlandı!\n");

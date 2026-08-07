@@ -94,7 +94,7 @@ public class UpdaterService
 
         if (asset is null)
         {
-            MessageBox.Show(
+            System.Windows.MessageBox.Show(
                 "Bu sürüm için indirilebilir EXE bulunamadı.\n" +
                 "Lütfen GitHub sayfasından manuel olarak indirin.",
                 "Güncelleme Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -167,6 +167,6 @@ del "%~f0"
             UseShellExecute = false,
         });
 
-        Application.Current.Shutdown();
+        System.Windows.Application.Current.Shutdown();
     }
 }

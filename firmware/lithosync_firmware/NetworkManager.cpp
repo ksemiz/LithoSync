@@ -29,6 +29,8 @@ bool NetworkManager::begin() {
 
     // TX gücünü maksimuma çıkar: uzak / zayıf sinyal durumunda bağlantıyı iyileştirir
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
+    WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+    WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
     delay(200);
 
     // 2. Ön tanımlı SSID ve Şifre ile bağlanmayı dene (placeholder değilse)
@@ -84,7 +86,7 @@ bool NetworkManager::begin() {
         _wm->setTitle("LithoSync LED Controller");
         _wm->setConfigPortalTimeout(180);    // 3 dk sonra portal kapanır
         _wm->setConnectTimeout(30);          // Bağlantı denemesi için 30 sn
-        _wm->setBreakAfterConfig(true);      // Config alındıktan sonra devam et
+        _wm->setCleanConnect(true);          // BSSID temizle, Wi-Fi Range Extender geçişlerini kolaylaştırır
         _wm->setMinimumSignalQuality(-1);    // Tüm ağları göster, sinyal filtresini devre dışı bırak
         _wm->setShowStaticFields(false);     // Gereksiz teknik alanları gizle
         _wm->setShowDnsFields(false);        // DNS alanını gizle

@@ -31,11 +31,12 @@ namespace IoTLedController.ViewModels
         [ObservableProperty] private string _currentPage = "Connect";
 
         // ── Bağlantı ──────────────────────────────────────────────────────────
-        [ObservableProperty] private string _deviceIp = "192.168.1.100";
+        [ObservableProperty] private string _deviceIp = "iot-led.local";  // dahili — UI'da gösterilmez
         [ObservableProperty] private bool   _isConnected;
-        [ObservableProperty] private string _connectionStatus = "Cihaz Aranıyor...";
+        [ObservableProperty] private string _connectionStatus = "LithoSync cihazı aranıyor...";
         [ObservableProperty] private string _deviceInfo = "—";
         [ObservableProperty] private bool   _isSearching;
+        private CancellationTokenSource? _discoveryCts;
 
         // ── LED Modu ──────────────────────────────────────────────────────────
         private int _currentMode;
@@ -109,7 +110,7 @@ namespace IoTLedController.ViewModels
         [ObservableProperty] private MediaColor  _spotifyColor = MediaColor.FromRgb(100, 0, 200);
         public SpotifyService Spotify { get; } = new();
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ────────────────────────────────────────────────────────────────────────────
         public MainViewModel()
         {
             for (int i = 0; i < 6; i++)
@@ -126,40 +127,92 @@ namespace IoTLedController.ViewModels
                 if (CurrentMode == 0) SetGlobalColor(mc);
             };
             Spotify.AuthStatusChanged += s => SpotifyAuth = s;
+            // Uygulama başlatılınca otomatik cihaz araması başlat
             Task.Run(() => DiscoverDeviceAsync());
         }
 
         [RelayCommand]
         private void Navigate(string page) => CurrentPage = page;
 
-        // ── Cihaz Keşif ───────────────────────────────────────────────────────
+        // ═ Cihaz Keşif — UDP Broadcast + mDNS fallback + 10sn otomatik retry ════════
         [RelayCommand]
         private async Task DiscoverDeviceAsync()
         {
+            // Önceki arama döngüsünü iptal et
+            _discoveryCts?.Cancel();
+            _discoveryCts = new CancellationTokenSource();
+            var ct = _discoveryCts.Token;
+
             IsSearching = true;
-            ConnectionStatus = "Ağdaki LithoSync Cihazı Taranıyor...";
-            try
+
+            while (!ct.IsCancellationRequested)
             {
-                using var udpClient = new UdpClient();
-                udpClient.EnableBroadcast = true;
-                udpClient.Client.ReceiveTimeout = 2500;
-                byte[] pkt = Encoding.UTF8.GetBytes("LITHOSYNC_DISCOVER");
-                await udpClient.SendAsync(pkt, pkt.Length, new IPEndPoint(IPAddress.Broadcast, 4210));
-                var res = await udpClient.ReceiveAsync();
-                using var doc = JsonDocument.Parse(res.Buffer);
-                if (doc.RootElement.TryGetProperty("ip", out var ip))
+                ConnectionStatus = "🔍 LithoSync cihazı ağında aranıyor...";
+                string? foundIp = null;
+
+                // ─ Deneme 1: UDP Broadcast ─────────────────────────────────────────
+                try
                 {
-                    DeviceIp = ip.GetString()!;
+                    using var udpClient = new UdpClient();
+                    udpClient.EnableBroadcast = true;
+                    udpClient.Client.SetSocketOption(
+                        SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+
+                    byte[] pkt = Encoding.UTF8.GetBytes("LITHOSYNC_DISCOVER");
+                    await udpClient.SendAsync(pkt, pkt.Length,
+                        new IPEndPoint(IPAddress.Broadcast, 4210));
+
+                    // Task.WhenAny ile proper async timeout
+                    var receiveTask = udpClient.ReceiveAsync();
+                    var timeoutTask = Task.Delay(2500, ct);
+                    var winner = await Task.WhenAny(receiveTask, timeoutTask);
+
+                    if (winner == receiveTask && !receiveTask.IsFaulted)
+                    {
+                        var res = await receiveTask;
+                        using var doc = JsonDocument.Parse(res.Buffer);
+                        if (doc.RootElement.TryGetProperty("ip", out var ipEl))
+                            foundIp = ipEl.GetString();
+                    }
+                }
+                catch (OperationCanceledException) { break; }
+                catch { /* UDP başarısız, sonraki denemeye geç */ }
+
+                // ─ Deneme 2: mDNS (iot-led.local) ─────────────────────────────────
+                if (foundIp == null && !ct.IsCancellationRequested)
+                {
+                    try
+                    {
+                        ConnectionStatus = "🌐 mDNS ile aranıyor (iot-led.local)...";
+                        using var testHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(2.5) };
+                        var resp = await testHttp.GetStringAsync("http://iot-led.local/status");
+                        using var doc = JsonDocument.Parse(resp);
+                        if (doc.RootElement.TryGetProperty("ok", out var okEl) && okEl.GetBoolean())
+                            foundIp = "iot-led.local";
+                    }
+                    catch (OperationCanceledException) { break; }
+                    catch { /* mDNS başarısız */ }
+                }
+
+                // ─ Bulundu — bağlan ────────────────────────────────────────────────
+                if (foundIp != null && !ct.IsCancellationRequested)
+                {
+                    DeviceIp = foundIp;
+                    IsSearching = false;
                     await ConnectAsync();
                     return;
                 }
+
+                // ─ Bulunamadı — 10sn sonra tekrar ─────────────────────────────────
+                if (!ct.IsCancellationRequested)
+                {
+                    ConnectionStatus = "⚠️ Cihaz bulunamadı. Cihazın açık ve aynı ağda olduğundan emin olun. (10sn sonra tekrar aranacak...)";
+                    try { await Task.Delay(10_000, ct); }
+                    catch (OperationCanceledException) { break; }
+                }
             }
-            catch
-            {
-                try { DeviceIp = "iot-led.local"; await ConnectAsync(); return; } catch { }
-            }
-            finally { IsSearching = false; }
-            if (!IsConnected) ConnectionStatus = "Cihaz bulunamadı. IP adresini girin.";
+
+            IsSearching = false;
         }
 
         [RelayCommand]

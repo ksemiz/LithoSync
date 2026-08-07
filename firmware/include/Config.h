@@ -25,9 +25,8 @@
 
 
 // ─── OTA Güncelleme ───────────────────────────────────────────────────────────
-//  !! Placeholder — kendi GitHub repo adresinizle değiştirin !!
 #define CURRENT_VERSION    "1.0.0"
-#define OTA_VERSION_URL    "https://raw.githubusercontent.com/YOUR_USER/YOUR_REPO/main/firmware/version.json"
+#define OTA_VERSION_URL    "https://raw.githubusercontent.com/ksemiz/LithoSync/main/firmware/version.json"
 #define OTA_CHECK_INTERVAL (30UL * 60UL * 1000UL)  // Otomatik kontrol: 30 dk
 
 // ─── LED Mod Sabitleri ────────────────────────────────────────────────────────

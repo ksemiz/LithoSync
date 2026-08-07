@@ -21,10 +21,14 @@ NetworkManager::~NetworkManager() {
 bool NetworkManager::begin() {
     Serial.println("[NET] NetworkManager başlatılıyor...");
 
-    // 1. WiFi modunu ayarla — resetSettings() KALDIRILD! (her açılışta credentials siliniyordu)
+    // 1. WiFi ayarları — resetSettings() KALDIRILD (her açılışta credentials siliniyordu)
+    WiFi.persistent(true);            // Credentials NVS'te kalıcı saklansın
+    WiFi.setAutoReconnect(true);      // Kopmada otomatik yeniden bağlansın
     WiFi.mode(WIFI_STA);
-    WiFi.setAutoReconnect(true);
-    WiFi.setSleep(false);
+    WiFi.setSleep(false);             // WiFi uyku modunu kapat (bağlantı stabilite)
+
+    // TX gücünü maksimuma çıkar: uzak / zayıf sinyal durumunda bağlantıyı iyileştirir
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
     delay(200);
 
     // 2. Ön tanımlı SSID ve Şifre ile bağlanmayı dene (placeholder değilse)
@@ -41,8 +45,9 @@ bool NetworkManager::begin() {
         delay(100);
         WiFi.begin(defaultSsid.c_str(), defaultPass.c_str());
 
+        // 25sn — zayıf sinyal için ek süre (eski 15sn çok kısaydı)
         unsigned long startAttempt = millis();
-        while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 15000) {
+        while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 25000) {
             delay(500);
             Serial.print(".");
         }
@@ -50,13 +55,14 @@ bool NetworkManager::begin() {
 
         if (WiFi.status() == WL_CONNECTED) {
             defaultConnected = true;
-            Serial.println("[NET] Ön tanımlı Wi-Fi ağına başarıyla bağlandı!");
+            Serial.printf("[NET] Ön tanımlı Wi-Fi ağına başarıyla bağlandı! RSSI: %d dBm\n", WiFi.RSSI());
         } else {
             Serial.printf("[NET] Ön tanımlı ağa bağlanılamadı (durum: %d). Captive Portal açılıyor...\n", WiFi.status());
             WiFi.disconnect(true);
             delay(200);
         }
     } else {
+
         // Placeholder kaldıysa — WiFiManager'ın NVS'deki kayıtlı bilgileri kullanmasına izin ver
         Serial.println("[NET] Hardcoded SSID yok, WiFiManager kaydedilmiş bilgileri kullanacak.");
     }

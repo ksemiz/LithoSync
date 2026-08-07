@@ -6,11 +6,25 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <AssemblyName>IoTLedController</AssemblyName>
+    <AssemblyName>LithoSync</AssemblyName>
     <RootNamespace>IoTLedController</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Windows Forms için (ekran yakalama GDI+) -->
     <UseWindowsForms>true</UseWindowsForms>
+
+    <!-- ── Versiyon (Güncelleme sistemi bunu okur) ── -->
+    <Version>2.0.0</Version>
+    <AssemblyVersion>1.0.0</AssemblyVersion>
+    <FileVersion>1.0.0</FileVersion>
+
+    <!-- ── Tek-dosya EXE çıktısı (dotnet publish -c Release -r win-x64) ── -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <!-- Semboller ayrı dosyaya — EXE daha küçük -->
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>

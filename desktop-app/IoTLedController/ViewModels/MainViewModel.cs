@@ -26,6 +26,7 @@ namespace IoTLedController.ViewModels
         private UdpClient? _udp;
         private CancellationTokenSource? _ambiCts;
         private WasapiLoopbackCapture? _audioCapture;
+        private readonly UpdaterService _updater = new();
 
         // ── Navigasyon ────────────────────────────────────────────────────────
         [ObservableProperty] private string _currentPage = "Connect";
@@ -37,6 +38,19 @@ namespace IoTLedController.ViewModels
         [ObservableProperty] private string _deviceInfo = "—";
         [ObservableProperty] private bool   _isSearching;
         private CancellationTokenSource? _discoveryCts;
+
+        // ── Güncelleme ────────────────────────────────────────────────────────
+        public string AppCurrentVersion => $"v{UpdaterService.CurrentVersion}";
+        [ObservableProperty] private string _updateStatusText = "Uygulama güncel olup olmadığı kontrol edilmedi.";
+        [ObservableProperty] private bool   _isDownloadingUpdate;
+        [ObservableProperty] private int    _updateDownloadPercent;
+        [ObservableProperty] private bool   _hasPendingUpdate;
+        // IsNotDownloadingUpdate — buton IsEnabled için
+        public bool IsNotDownloadingUpdate => !IsDownloadingUpdate;
+        private IoTLedController.Services.GitHubRelease? _pendingRelease;
+
+        partial void OnIsDownloadingUpdateChanged(bool value) =>
+            OnPropertyChanged(nameof(IsNotDownloadingUpdate));
 
         // ── LED Modu ──────────────────────────────────────────────────────────
         private int _currentMode;
@@ -129,10 +143,71 @@ namespace IoTLedController.ViewModels
             Spotify.AuthStatusChanged += s => SpotifyAuth = s;
             // Uygulama başlatılınca otomatik cihaz araması başlat
             Task.Run(() => DiscoverDeviceAsync());
+            // Uygulama başlatıldıktan 8 sn sonra arka planda güncelleme kontrol et
+            Task.Run(async () => {
+                await Task.Delay(8000);
+                await CheckUpdateAsync(silent: true);
+            });
         }
 
         [RelayCommand]
         private void Navigate(string page) => CurrentPage = page;
+
+        // ═ Uygulama Güncellemesi ═══════════════════════════════════════════════════════════════
+        [RelayCommand]
+        private async Task CheckUpdateAsync(bool silent = false)
+        {
+            if (!silent)
+                UpdateStatusText = "🔍 GitHub'da yeni sürüm kontrol ediliyor...";
+            try
+            {
+                var release = await _updater.CheckForUpdateAsync();
+                if (release is null)
+                {
+                    HasPendingUpdate = false;
+                    _pendingRelease  = null;
+                    UpdateStatusText = $"✅ Uygulamanız güncel. (Mevcut: {UpdaterService.CurrentVersion})";
+                }
+                else
+                {
+                    HasPendingUpdate = true;
+                    _pendingRelease  = release;
+                    var ver = release.TagName.TrimStart('v');
+                    UpdateStatusText = $"📦 Yeni sürüm mevcut: v{ver}\n↓ Güncelle ve Yeniden Başlat butonuna basarak yükseltebilirsiniz.";
+                }
+            }
+            catch
+            {
+                if (!silent)
+                    UpdateStatusText = "⚠️ Güncelleme kontrolü başarsız. İnternet bağlantınızı kontrol edin.";
+            }
+        }
+
+        [RelayCommand]
+        private async Task ApplyUpdateAsync()
+        {
+            if (_pendingRelease is null) return;
+
+            IsDownloadingUpdate   = true;
+            UpdateDownloadPercent = 0;
+
+            var progress = new Progress<(int Percent, string Status)>(x =>
+            {
+                UpdateDownloadPercent = x.Percent;
+                UpdateStatusText      = x.Status;
+            });
+
+            try
+            {
+                await _updater.DownloadAndUpdateAsync(_pendingRelease, progress);
+                // DownloadAndUpdateAsync Application.Current.Shutdown() çağırır — bu noktaya ulaşılmaz
+            }
+            catch (Exception ex)
+            {
+                IsDownloadingUpdate = false;
+                UpdateStatusText    = $"❌ Güncelleme hatası: {ex.Message}";
+            }
+        }
 
         // ═ Cihaz Keşif — UDP Broadcast + mDNS fallback + 10sn otomatik retry ════════
         [RelayCommand]

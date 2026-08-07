@@ -1,11 +1,13 @@
 // =============================================================================
-//  useEsp32.ts  —  ESP32 bağlantı ve durum yönetimi hook'u
+//  useEsp32.ts  —  ESP32 bağlantı, otomatik keşif ve mobil güncelleme yönetimi
 // =============================================================================
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Esp32Api, DeviceStatus, RgbColor } from '@/constants/api';
+import { autoDiscoverDevice } from '@/services/discovery';
+import { checkForMobileUpdate, MobileRelease } from '@/services/updater';
 
-export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type ConnectionState = 'disconnected' | 'searching' | 'connecting' | 'connected' | 'error';
 
 export interface Esp32State {
   connectionState: ConnectionState;
@@ -13,6 +15,9 @@ export interface Esp32State {
   error: string | null;
   ip: string;
   api: Esp32Api | null;
+  searchStatus: string;
+  searchProgress: number;
+  availableUpdate: MobileRelease | null;
 }
 
 export function useEsp32() {
@@ -22,13 +27,23 @@ export function useEsp32() {
     error: null,
     ip: '',
     api: null,
+    searchStatus: '',
+    searchProgress: 0,
+    availableUpdate: null,
   });
 
   const apiRef = useRef<Esp32Api | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
 
-  // ── Bağlan ─────────────────────────────────────────────────────────────────
+  // ── Doğrudan IP ile Bağlan ────────────────────────────────────────────────
   const connect = useCallback(async (ip: string) => {
-    setState(prev => ({ ...prev, connectionState: 'connecting', error: null, ip }));
+    setState(prev => ({
+      ...prev,
+      connectionState: 'connecting',
+      error: null,
+      ip,
+      searchStatus: 'Bağlanıyor...',
+    }));
 
     const api = new Esp32Api(ip);
     apiRef.current = api;
@@ -41,6 +56,8 @@ export function useEsp32() {
         status,
         api,
         error: null,
+        searchStatus: 'Bağlandı',
+        searchProgress: 100,
       }));
       return true;
     } catch (err: any) {
@@ -50,21 +67,79 @@ export function useEsp32() {
         connectionState: 'error',
         error: msg,
         api: null,
+        searchStatus: 'Bağlantı kurulamadı',
       }));
       return false;
     }
   }, []);
 
+  // ── Otomatik Cihaz Keşfet ve Bağlan ───────────────────────────────────────
+  const autoDiscover = useCallback(async () => {
+    searchAbortRef.current?.abort();
+    const abortController = new AbortController();
+    searchAbortRef.current = abortController;
+
+    setState(prev => ({
+      ...prev,
+      connectionState: 'searching',
+      error: null,
+      searchStatus: 'Ağda LithoSync aranıyor...',
+      searchProgress: 5,
+    }));
+
+    try {
+      const found = await autoDiscoverDevice((progress, statusText) => {
+        setState(prev => ({
+          ...prev,
+          searchProgress: Math.round(progress),
+          searchStatus: statusText,
+        }));
+      }, abortController.signal);
+
+      if (found && !abortController.signal.aborted) {
+        setState(prev => ({
+          ...prev,
+          ip: found.ip,
+          searchStatus: `Cihaz bulundu (${found.ip}), bağlanılıyor...`,
+        }));
+        return await connect(found.ip);
+      } else if (!abortController.signal.aborted) {
+        setState(prev => ({
+          ...prev,
+          connectionState: 'disconnected',
+          searchStatus: 'Cihaz ağda bulunamadı',
+          error: 'LithoSync cihazı bulunamadı. Cihazın açık ve aynı Wi-Fi ağında olduğundan emin olun.',
+        }));
+        return false;
+      }
+    } catch (err: any) {
+      if (!abortController.signal.aborted) {
+        setState(prev => ({
+          ...prev,
+          connectionState: 'error',
+          searchStatus: 'Arama hatası',
+          error: err?.message || 'Arama sırasında hata oluştu',
+        }));
+      }
+      return false;
+    }
+    return false;
+  }, [connect]);
+
   // ── Bağlantıyı kes ─────────────────────────────────────────────────────────
   const disconnect = useCallback(() => {
+    searchAbortRef.current?.abort();
     apiRef.current = null;
-    setState({
+    setState(prev => ({
+      ...prev,
       connectionState: 'disconnected',
       status: null,
       error: null,
       ip: '',
       api: null,
-    });
+      searchStatus: '',
+      searchProgress: 0,
+    }));
   }, []);
 
   // ── Durumu yenile ──────────────────────────────────────────────────────────
@@ -75,6 +150,31 @@ export function useEsp32() {
       setState(prev => ({ ...prev, status }));
     } catch { /* sessizce geç */ }
   }, []);
+
+  // ── GitHub Mobil Güncelleme Kontrolü ──────────────────────────────────────
+  const checkUpdates = useCallback(async () => {
+    const release = await checkForMobileUpdate();
+    if (release && release.hasUpdate) {
+      setState(prev => ({ ...prev, availableUpdate: release }));
+    }
+    return release;
+  }, []);
+
+  // ── Uygulama Açılışında Otomatik Keşif ve Güncelleme Kontrolü ───────────────
+  useEffect(() => {
+    // 1. Otomatik cihaz araması başlat
+    autoDiscover();
+
+    // 2. 3 saniye sonra arka planda güncelleme kontrol et
+    const timer = setTimeout(() => {
+      checkUpdates();
+    }, 3000);
+
+    return () => {
+      clearTimeout(timer);
+      searchAbortRef.current?.abort();
+    };
+  }, [autoDiscover, checkUpdates]);
 
   // ── Mod ayarla ─────────────────────────────────────────────────────────────
   const setMode = useCallback(async (mode: number) => {
@@ -121,12 +221,15 @@ export function useEsp32() {
   return {
     ...state,
     connect,
+    autoDiscover,
     disconnect,
     refreshStatus,
+    checkUpdates,
     setMode,
     setGlobalColor,
     setLedColor,
     setBrightness,
     isConnected: state.connectionState === 'connected',
+    isSearching: state.connectionState === 'searching',
   };
 }

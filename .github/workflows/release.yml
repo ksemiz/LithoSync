@@ -28,7 +28,13 @@ jobs:
         run: |
           dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -o ../../publish
 
-      - name: Create Release and Upload Asset
+      - name: Upload Desktop Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LithoSync-Desktop-Windows
+          path: publish/LithoSync.exe
+
+      - name: Create Release and Upload Windows EXE
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'tags/')
         with:

@@ -1,0 +1,70 @@
+name: Build Android APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+    paths:
+      - 'mobile-app/**'
+      - '.github/workflows/build-android-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build Standalone APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: mobile-app/package-lock.json
+
+      - name: Setup Java 17 (JDK)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        working-directory: mobile-app
+        run: npm ci
+
+      - name: Expo Prebuild (Generate Android Project)
+        working-directory: mobile-app
+        run: npx expo prebuild --platform android --clean
+
+      - name: Build Release APK with Gradle
+        working-directory: mobile-app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Copy & Rename APK
+        run: |
+          mkdir -p output_apk
+          find mobile-app/android/app/build/outputs/apk/release -name "*.apk" -exec cp {} output_apk/LithoSync-Mobile.apk \;
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LithoSync-Android-APK
+          path: output_apk/LithoSync-Mobile.apk
+          retention-days: 30
+
+      - name: Attach APK to GitHub Release (If tagged)
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'tags/')
+        with:
+          files: output_apk/LithoSync-Mobile.apk

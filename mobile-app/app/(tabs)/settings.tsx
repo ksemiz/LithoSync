@@ -1,22 +1,25 @@
 // =============================================================================
-//  settings.tsx  —  Ayarlar Ekranı
+//  settings.tsx  —  Ayarlar Ekranı (Mobil Güncelleme + Cihaz OTA)
 // =============================================================================
 
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, Linking, Switch,
+  Alert, Linking, Switch, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { Colors, Gradients } from '@/constants/Colors';
+import { Colors } from '@/constants/Colors';
 import { useEsp32Context } from './index';
+import { CURRENT_MOBILE_VERSION, checkForMobileUpdate, startMobileUpdate, MobileRelease } from '@/services/updater';
 
 export default function SettingsScreen() {
   const esp32 = useEsp32Context();
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [latestRelease, setLatestRelease] = useState<MobileRelease | null>(esp32.availableUpdate);
 
   const handleWifiReset = () => {
     Alert.alert(
@@ -39,7 +42,32 @@ export default function SettingsScreen() {
     if (!esp32.isConnected) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await esp32.api?.checkUpdate();
-    Alert.alert('OTA', 'Güncelleme kontrolü başlatıldı. Sonuç için seri monitörü takip edin.');
+    Alert.alert('OTA Firmware', 'ESP32 firmware güncelleme kontrolü başlatıldı.');
+  };
+
+  const handleCheckMobileUpdate = async () => {
+    setCheckingUpdate(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const release = await checkForMobileUpdate();
+    setCheckingUpdate(false);
+
+    if (release) {
+      setLatestRelease(release);
+      if (release.hasUpdate) {
+        Alert.alert(
+          '🎉 Yeni Sürüm Mevcut!',
+          `Mobil Uygulama ${release.version} yayında.\n\nYenilikler:\n${release.body || 'Performans iyileştirmeleri ve hata düzeltmeleri.'}`,
+          [
+            { text: 'Daha Sonra', style: 'cancel' },
+            { text: 'İndir ve Güncelle', onPress: () => startMobileUpdate(release) },
+          ]
+        );
+      } else {
+        Alert.alert('✅ Güncel', `Mobil uygulamanız en son sürümde (v${CURRENT_MOBILE_VERSION}).`);
+      }
+    } else {
+      Alert.alert('Bağlantı Hatası', 'GitHub Releases kontrol edilemedi. İnternet bağlantınızı kontrol edin.');
+    }
   };
 
   return (
@@ -51,38 +79,70 @@ export default function SettingsScreen() {
           <Text style={styles.title}>Ayarlar</Text>
         </Animated.View>
 
-        {/* ── Cihaz Bilgisi ──────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(50)} style={styles.section}>
-          <Text style={styles.sectionLabel}>CİHAZ</Text>
-
+        {/* ── Mobil Uygulama Güncellemesi ────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(30)} style={styles.section}>
+          <Text style={styles.sectionLabel}>MOBİL UYGULAMA</Text>
           <View style={styles.card}>
             <Row
-              icon="hardware-chip"
+              icon="phone-portrait-outline"
+              label="Mevcut Sürüm"
+              value={`v${CURRENT_MOBILE_VERSION}`}
+            />
+            <Divider />
+            <ActionRow
+              icon="cloud-download-outline"
+              label="GitHub Güncelleme Kontrol"
+              sub={latestRelease?.hasUpdate ? `Yeni sürüm mevcut: ${latestRelease.version}` : 'GitHub Releases API ile kontrol et'}
+              color={Colors.accent}
+              onPress={handleCheckMobileUpdate}
+              loading={checkingUpdate}
+            />
+            {latestRelease?.hasUpdate && (
+              <>
+                <Divider />
+                <ActionRow
+                  icon="arrow-down-circle"
+                  label="APK İndir ve Kur"
+                  sub={`${latestRelease.version} sürümünü doğrudan indir`}
+                  color={Colors.success}
+                  onPress={() => startMobileUpdate(latestRelease)}
+                />
+              </>
+            )}
+          </View>
+        </Animated.View>
+
+        {/* ── Cihaz Bilgisi ──────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(60)} style={styles.section}>
+          <Text style={styles.sectionLabel}>ESP32 CİHAZ</Text>
+          <View style={styles.card}>
+            <Row
+              icon="hardware-chip-outline"
               label="Model"
               value="ESP32-C3 Super Mini"
             />
             <Divider />
             <Row
-              icon="git-branch"
-              label="Firmware"
-              value={esp32.isConnected ? `v${esp32.status?.version}` : '—'}
+              icon="git-branch-outline"
+              label="Firmware Sürümü"
+              value={esp32.isConnected ? `v${esp32.status?.version || '1.0.0'}` : '—'}
             />
             <Divider />
             <Row
-              icon="wifi"
+              icon="wifi-outline"
               label="IP Adresi"
               value={esp32.isConnected ? esp32.status?.ip ?? '—' : '—'}
             />
             <Divider />
             <Row
-              icon="cellular"
-              label="SSID"
+              icon="cellular-outline"
+              label="Wi-Fi SSID"
               value={esp32.isConnected ? esp32.status?.ssid ?? '—' : '—'}
             />
             <Divider />
             <Row
-              icon="finger-print"
-              label="MAC"
+              icon="finger-print-outline"
+              label="MAC Adresi"
               value={esp32.isConnected ? esp32.status?.mac ?? '—' : '—'}
               mono
             />
@@ -90,16 +150,15 @@ export default function SettingsScreen() {
         </Animated.View>
 
         {/* ── Uygulama Tercihleri ────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(100)} style={styles.section}>
-          <Text style={styles.sectionLabel}>UYGULAMA</Text>
-
+        <Animated.View entering={FadeInDown.delay(90)} style={styles.section}>
+          <Text style={styles.sectionLabel}>TERCİHLER</Text>
           <View style={styles.card}>
             <View style={styles.row}>
               <View style={styles.rowLeft}>
                 <Ionicons name="refresh" size={18} color={Colors.accent} />
                 <View>
                   <Text style={styles.rowLabel}>Otomatik Yenile</Text>
-                  <Text style={styles.rowSub}>5 sn'de bir durumu güncelle</Text>
+                  <Text style={styles.rowSub}>5 sn'de bir canlı LED durumunu güncelle</Text>
                 </View>
               </View>
               <Switch
@@ -113,14 +172,13 @@ export default function SettingsScreen() {
         </Animated.View>
 
         {/* ── Cihaz İşlemleri ────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(150)} style={styles.section}>
-          <Text style={styles.sectionLabel}>İŞLEMLER</Text>
-
+        <Animated.View entering={FadeInDown.delay(120)} style={styles.section}>
+          <Text style={styles.sectionLabel}>CİHAZ İŞLEMLERİ</Text>
           <View style={styles.card}>
             <ActionRow
-              icon="cloud-download-outline"
-              label="OTA Güncelleme Kontrol"
-              sub="GitHub'dan yeni firmware kontrol et"
+              icon="cloud-upload-outline"
+              label="ESP32 OTA Güncelleme Kontrol"
+              sub="GitHub'dan yeni firmware.bin kontrol et"
               color={Colors.info}
               onPress={handleOtaCheck}
               disabled={!esp32.isConnected}
@@ -146,26 +204,18 @@ export default function SettingsScreen() {
           </View>
         </Animated.View>
 
-        {/* ── Hakkında ────────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(200)} style={styles.section}>
+        {/* ── GitHub Repo Linki ──────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(150)} style={styles.section}>
           <Text style={styles.sectionLabel}>HAKKINDA</Text>
-
           <View style={styles.card}>
             <ActionRow
               icon="logo-github"
-              label="GitHub — LithoSync"
+              label="GitHub Deposu"
               sub="github.com/ksemiz/LithoSync"
-              color={Colors.accent}
+              color={Colors.text}
               onPress={() => Linking.openURL('https://github.com/ksemiz/LithoSync')}
             />
           </View>
-        </Animated.View>
-
-        {/* ── Footer ──────────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(250)} style={styles.footer}>
-          <LinearGradient colors={Gradients.accent} style={styles.footerDot} />
-          <Text style={styles.footerText}>LithoSync v1.0.0</Text>
-          <Text style={styles.footerSub}>ESP32-C3 + WS2812B IoT LED Controller</Text>
         </Animated.View>
 
       </ScrollView>
@@ -173,38 +223,40 @@ export default function SettingsScreen() {
   );
 }
 
-// ─── Yardımcı bileşenler ──────────────────────────────────────────────────────
-function Row({ icon, label, value, mono = false }: {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  label: string; value: string; mono?: boolean;
-}) {
+function Row({ icon, label, value, mono }: { icon: any; label: string; value: string; mono?: boolean }) {
   return (
     <View style={styles.row}>
       <View style={styles.rowLeft}>
-        <Ionicons name={icon} size={18} color={Colors.accent} />
+        <Ionicons name={icon} size={18} color={Colors.textMuted} />
         <Text style={styles.rowLabel}>{label}</Text>
       </View>
-      <Text style={[styles.rowValue, mono && styles.rowMono]} numberOfLines={1}>{value}</Text>
+      <Text style={[styles.rowValue, mono && styles.mono]}>{value}</Text>
     </View>
   );
 }
 
-function ActionRow({ icon, label, sub, color, onPress, disabled }: {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  label: string; sub: string; color: string;
-  onPress: () => void; disabled?: boolean;
+function ActionRow({
+  icon, label, sub, color, onPress, disabled, loading,
+}: {
+  icon: any; label: string; sub?: string; color: string;
+  onPress: () => void; disabled?: boolean; loading?: boolean;
 }) {
   return (
     <TouchableOpacity
-      style={[styles.row, disabled && { opacity: 0.4 }]}
+      style={[styles.row, disabled && styles.rowDisabled]}
       onPress={onPress}
-      disabled={disabled}
+      disabled={disabled || loading}
+      activeOpacity={0.7}
     >
       <View style={styles.rowLeft}>
-        <Ionicons name={icon} size={18} color={color} />
+        {loading ? (
+          <ActivityIndicator size="small" color={color} style={{ width: 18, height: 18 }} />
+        ) : (
+          <Ionicons name={icon} size={18} color={disabled ? Colors.textMuted : color} />
+        )}
         <View>
-          <Text style={styles.rowLabel}>{label}</Text>
-          {sub && <Text style={styles.rowSub}>{sub}</Text>}
+          <Text style={[styles.rowLabel, { color: disabled ? Colors.textMuted : color }]}>{label}</Text>
+          {sub ? <Text style={styles.rowSub}>{sub}</Text> : null}
         </View>
       </View>
       <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
@@ -216,36 +268,39 @@ function Divider() {
   return <View style={styles.divider} />;
 }
 
-// ─── Stiller ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root:   { flex: 1 },
-  scroll: { padding: 20, paddingTop: 60, paddingBottom: 120 },
-
-  header: { marginBottom: 24 },
-  title:  { fontSize: 24, fontWeight: '800', color: Colors.textPrimary },
-
-  section:      { marginBottom: 24 },
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: Colors.textMuted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8, paddingLeft: 4 },
-
+  root: { flex: 1 },
+  scroll: { padding: 24, paddingBottom: 60 },
+  header: { marginBottom: 24, marginTop: 10 },
+  title: { fontSize: 28, fontWeight: '800', color: Colors.text, letterSpacing: -0.5 },
+  section: { marginBottom: 20 },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    letterSpacing: 0.8,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
   card: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: 14,
-    overflow: 'hidden',
+    backgroundColor: Colors.cardBg,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: Colors.border,
+    paddingVertical: 4,
   },
-
-  row:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, gap: 10 },
-  rowLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  rowLabel: { color: Colors.textPrimary, fontSize: 14, fontWeight: '500' },
-  rowSub:   { color: Colors.textMuted, fontSize: 11, marginTop: 1 },
-  rowValue: { color: Colors.textSecondary, fontSize: 13 },
-  rowMono:  { fontFamily: 'monospace', fontSize: 11 },
-
-  divider: { height: 1, backgroundColor: Colors.border, marginLeft: 46 },
-
-  footer:    { alignItems: 'center', gap: 6, paddingTop: 8 },
-  footerDot: { width: 10, height: 10, borderRadius: 5 },
-  footerText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' },
-  footerSub:  { color: Colors.textMuted, fontSize: 11 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  rowDisabled: { opacity: 0.4 },
+  rowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  rowLabel: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  rowSub: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  rowValue: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  mono: { fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', fontSize: 11 },
+  divider: { height: 1, backgroundColor: Colors.border, marginHorizontal: 16 },
 });

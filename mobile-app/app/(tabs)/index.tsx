@@ -1,5 +1,5 @@
 // =============================================================================
-//  index.tsx  —  Bağlantı Ekranı
+//  index.tsx  —  Mobil Ana Ekran (Otomatik Arama + GitHub Güncelleme)
 // =============================================================================
 
 import React, { useState, useCallback, createContext, useContext } from 'react';
@@ -13,7 +13,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors, Gradients } from '@/constants/Colors';
 import { useEsp32 } from '@/hooks/useEsp32';
 import { LedPreview } from '@/components/LedPreview';
-import { MODE_NAMES, MODE_ICONS } from '@/constants/api';
+import { startMobileUpdate } from '@/services/updater';
 
 // ─── Global ESP32 Context (tüm tab'lar erişebilir) ───────────────────────────
 export const Esp32Context = createContext<ReturnType<typeof useEsp32> | null>(null);
@@ -23,32 +23,30 @@ export const useEsp32Context = () => {
   return ctx;
 };
 
-// ─── Ana Bağlantı Ekranı ─────────────────────────────────────────────────────
+// ─── Ana Ekran ───────────────────────────────────────────────────────────────
 export default function ConnectScreen() {
   const esp32 = useEsp32();
-  const [inputIp, setInputIp] = useState('192.168.1.');
+  const [manualIp, setManualIp] = useState('192.168.1.100');
+  const [showManual, setShowManual] = useState(false);
 
-  const handleConnect = useCallback(async () => {
-    if (!inputIp.trim()) return;
+  const handleManualConnect = useCallback(async () => {
+    if (!manualIp.trim()) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const ok = await esp32.connect(inputIp.trim());
+    const ok = await esp32.connect(manualIp.trim());
     if (ok) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     else     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-  }, [inputIp, esp32]);
+  }, [manualIp, esp32]);
 
-  const handleDisconnect = useCallback(() => {
-    Alert.alert('Bağlantıyı Kes', 'ESP32 bağlantısını kesmek istiyor musunuz?', [
-      { text: 'İptal', style: 'cancel' },
-      { text: 'Evet', onPress: () => esp32.disconnect(), style: 'destructive' },
-    ]);
+  const handleAutoSearch = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    esp32.autoDiscover();
   }, [esp32]);
 
-  const handleReset = useCallback(() => {
-    Alert.alert('WiFi Sıfırla', 'Cihazın WiFi ayarları silinecek ve AP moduna geçecek. Emin misiniz?', [
-      { text: 'İptal', style: 'cancel' },
-      { text: 'Sıfırla', style: 'destructive', onPress: () => esp32.api?.reset() },
-    ]);
-  }, [esp32]);
+  const handleApplyUpdate = useCallback(async () => {
+    if (!esp32.availableUpdate) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await startMobileUpdate(esp32.availableUpdate);
+  }, [esp32.availableUpdate]);
 
   return (
     <Esp32Context.Provider value={esp32}>
@@ -56,112 +54,188 @@ export default function ConnectScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.kav}>
           <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-            {/* ── Başlık ──────────────────────────────────────────────── */}
+            {/* ── Üst Başlık ─────────────────────────────────────────── */}
             <View style={styles.header}>
               <View style={styles.logoRow}>
                 <LinearGradient colors={Gradients.accent} style={styles.logoDot} />
                 <Text style={styles.logoText}>LithoSync</Text>
               </View>
-              <Text style={styles.subtitle}>IoT LED Controller</Text>
+              <Text style={styles.subtitle}>Kablosuz LED & Ambilight Kontrolü</Text>
             </View>
 
-            {/* ── Bağlantı Kartı ──────────────────────────────────────── */}
+            {/* ── GitHub Yeni Sürüm Bildirimi ─────────────────────────── */}
+            {esp32.availableUpdate && (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={styles.updateBanner}
+                onPress={handleApplyUpdate}
+              >
+                <LinearGradient
+                  colors={['rgba(108,99,255,0.25)', 'rgba(74,68,176,0.25)']}
+                  style={styles.updateBannerGrad}
+                >
+                  <View style={styles.updateIconWrap}>
+                    <Ionicons name="cloud-download" size={22} color={Colors.accent} />
+                  </View>
+                  <View style={styles.updateTextWrap}>
+                    <Text style={styles.updateTitle}>
+                      Yeni Sürüm Mevcut: {esp32.availableUpdate.version}
+                    </Text>
+                    <Text style={styles.updateSub}>
+                      İndirmek ve yüklemek için dokunun
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={Colors.accent} />
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+
+            {/* ── Cihaz Durum Kartı ──────────────────────────────────── */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>ESP32 Bağlantısı</Text>
+              <View style={styles.cardHeaderRow}>
+                <Text style={styles.cardTitle}>Cihaz Bağlantısı</Text>
+                {esp32.isConnected && (
+                  <View style={styles.liveBadge}>
+                    <View style={styles.liveDot} />
+                    <Text style={styles.liveText}>Aktif</Text>
+                  </View>
+                )}
+              </View>
 
               {!esp32.isConnected ? (
                 <>
-                  <Text style={styles.fieldLabel}>IP Adresi</Text>
-                  <View style={styles.inputRow}>
-                    <TextInput
-                      style={styles.input}
-                      value={inputIp}
-                      onChangeText={setInputIp}
-                      placeholder="192.168.1.100"
-                      placeholderTextColor={Colors.textMuted}
-                      keyboardType="decimal-pad"
-                      returnKeyType="done"
-                      onSubmitEditing={handleConnect}
-                      autoCapitalize="none"
-                    />
-                    <TouchableOpacity
-                      style={[styles.connectBtn, esp32.connectionState === 'connecting' && styles.btnDisabled]}
-                      onPress={handleConnect}
-                      disabled={esp32.connectionState === 'connecting'}
-                    >
-                      <LinearGradient colors={Gradients.accent} style={styles.connectBtnGrad}>
-                        {esp32.connectionState === 'connecting'
-                          ? <ActivityIndicator color="#FFF" size="small" />
-                          : <Ionicons name="wifi" size={20} color="#FFF" />
-                        }
-                      </LinearGradient>
-                    </TouchableOpacity>
+                  {/* Otomatik Arama Durumu */}
+                  <View style={styles.searchBox}>
+                    <View style={styles.searchIconRow}>
+                      {esp32.isSearching ? (
+                        <ActivityIndicator size="small" color={Colors.accent} style={{ marginRight: 8 }} />
+                      ) : (
+                        <Ionicons name="radio-outline" size={20} color={Colors.accent} style={{ marginRight: 8 }} />
+                      )}
+                      <Text style={styles.searchStatusText}>
+                        {esp32.searchStatus || 'Cihaz aranıyor...'}
+                      </Text>
+                    </View>
+
+                    {esp32.isSearching && (
+                      <View style={styles.progressBarBg}>
+                        <View
+                          style={[
+                            styles.progressBarFill,
+                            { width: `${Math.max(5, esp32.searchProgress)}%` },
+                          ]}
+                        />
+                      </View>
+                    )}
                   </View>
+
+                  {/* Butonlar */}
+                  <TouchableOpacity
+                    style={styles.autoSearchBtn}
+                    onPress={handleAutoSearch}
+                    disabled={esp32.isSearching}
+                  >
+                    <LinearGradient colors={Gradients.accent} style={styles.btnGrad}>
+                      <Ionicons name="search" size={18} color="#FFF" style={{ marginRight: 8 }} />
+                      <Text style={styles.btnText}>
+                        {esp32.isSearching ? 'Ağ Taranıyor...' : '🔍 Cihazı Otomatik Ara'}
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
 
                   {esp32.error && (
                     <View style={styles.errorBadge}>
-                      <Ionicons name="alert-circle" size={14} color={Colors.danger} />
+                      <Ionicons name="alert-circle" size={16} color={Colors.danger} />
                       <Text style={styles.errorText}>{esp32.error}</Text>
                     </View>
                   )}
 
-                  <Text style={styles.hint}>
-                    💡 ESP32'nin IP adresini router admin panelinden veya seri monitörden bulabilirsiniz.{'\n'}
-                    mDNS destekleniyorsa: <Text style={styles.hintAccent}>iot-led.local</Text> yazın.
-                  </Text>
+                  {/* Manuel IP Accordion */}
+                  <TouchableOpacity
+                    style={styles.accordionToggle}
+                    onPress={() => setShowManual(!showManual)}
+                  >
+                    <Text style={styles.accordionText}>
+                      {showManual ? '▲ Manuel IP Girişini Gizle' : '▼ Gelişmiş: Manuel IP Gir'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {showManual && (
+                    <View style={styles.manualBox}>
+                      <Text style={styles.fieldLabel}>Statik IP / mDNS</Text>
+                      <View style={styles.inputRow}>
+                        <TextInput
+                          style={styles.input}
+                          value={manualIp}
+                          onChangeText={setManualIp}
+                          placeholder="192.168.1.100 veya iot-led.local"
+                          placeholderTextColor={Colors.textMuted}
+                          autoCapitalize="none"
+                        />
+                        <TouchableOpacity
+                          style={styles.manualBtn}
+                          onPress={handleManualConnect}
+                        >
+                          <Text style={styles.manualBtnText}>Bağlan</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
                 </>
               ) : (
                 <>
-                  {/* ── Bağlı Durum ─────────────────────────────────── */}
-                  <View style={styles.connectedBadge}>
-                    <View style={styles.connectedDot} />
-                    <Text style={styles.connectedText}>Bağlandı — {esp32.status?.ip}</Text>
+                  {/* Bağlı Durum Kartı */}
+                  <View style={styles.connectedBox}>
+                    <View style={styles.deviceRow}>
+                      <Ionicons name="hardware-chip" size={18} color={Colors.accent} />
+                      <Text style={styles.deviceInfoText}>
+                        IP: <Text style={styles.highlightText}>{esp32.status?.ip || esp32.ip}</Text>
+                      </Text>
+                    </View>
+                    {esp32.status?.ssid ? (
+                      <View style={styles.deviceRow}>
+                        <Ionicons name="wifi" size={18} color={Colors.accent} />
+                        <Text style={styles.deviceInfoText}>
+                          Wi-Fi: <Text style={styles.highlightText}>{esp32.status.ssid}</Text>
+                        </Text>
+                      </View>
+                    ) : null}
+                    <View style={styles.deviceRow}>
+                      <Ionicons name="git-branch" size={18} color={Colors.accent} />
+                      <Text style={styles.deviceInfoText}>
+                        Firmware: <Text style={styles.highlightText}>v{esp32.status?.version || '1.0.0'}</Text>
+                      </Text>
+                    </View>
                   </View>
 
-                  {/* Cihaz Bilgileri */}
-                  <View style={styles.infoGrid}>
-                    <InfoItem icon="code-slash" label="Versiyon" value={`v${esp32.status?.version ?? '?'}`} />
-                    <InfoItem icon="wifi"       label="SSID"     value={esp32.status?.ssid ?? '?'} />
-                    <InfoItem icon="flash"      label="Mod"      value={`${MODE_ICONS[esp32.status?.mode ?? 0]} ${MODE_NAMES[esp32.status?.mode ?? 0]}`} />
-                    <InfoItem icon="time"       label="Uptime"   value={`${Math.floor((esp32.status?.uptime ?? 0) / 60)} dk`} />
+                  <View style={styles.previewSection}>
+                    <Text style={styles.previewLabel}>Canlı LED Durumu</Text>
+                    <LedPreview
+                      colors={esp32.status?.leds ?? Array(6).fill({ r: 40, g: 40, b: 60 })}
+                    />
                   </View>
 
-                  {/* LED Önizleme */}
-                  <Text style={styles.fieldLabel}>LED Durumu</Text>
-                  <LedPreview
-                    leds={esp32.status?.leds ?? Array(6).fill({ r: 0, g: 0, b: 0 })}
-                    size="md"
-                  />
+                  <View style={styles.btnRow}>
+                    <TouchableOpacity
+                      style={styles.reScanBtn}
+                      onPress={handleAutoSearch}
+                    >
+                      <Ionicons name="refresh" size={16} color={Colors.accent} style={{ marginRight: 6 }} />
+                      <Text style={styles.reScanText}>Yeniden Tara</Text>
+                    </TouchableOpacity>
 
-                  {/* Aksiyon butonları */}
-                  <View style={styles.actionRow}>
-                    <TouchableOpacity style={styles.refreshBtn} onPress={esp32.refreshStatus}>
-                      <Ionicons name="refresh" size={16} color={Colors.accent} />
-                      <Text style={styles.refreshText}>Yenile</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.otaBtn} onPress={() => esp32.api?.checkUpdate()}>
-                      <Ionicons name="cloud-download-outline" size={16} color={Colors.info} />
-                      <Text style={[styles.refreshText, { color: Colors.info }]}>OTA</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.disconnectBtn} onPress={handleDisconnect}>
-                      <Ionicons name="close-circle-outline" size={16} color={Colors.danger} />
-                      <Text style={[styles.refreshText, { color: Colors.danger }]}>Kes</Text>
+                    <TouchableOpacity
+                      style={styles.disconnectBtn}
+                      onPress={esp32.disconnect}
+                    >
+                      <Ionicons name="power" size={16} color={Colors.danger} style={{ marginRight: 6 }} />
+                      <Text style={styles.disconnectText}>Bağlantıyı Kes</Text>
                     </TouchableOpacity>
                   </View>
                 </>
               )}
             </View>
 
-            {/* ── Hızlı Bilgi Kartı ───────────────────────────────────── */}
-            {!esp32.isConnected && (
-              <View style={[styles.card, styles.infoCard]}>
-                <Text style={styles.cardTitle}>Kurulum</Text>
-                <Step num={1} text="ESP32'yi USB ile bilgisayara bağlayın ve firmware'i yükleyin." />
-                <Step num={2} text="LED'lerin mavi yandığını görünce telefon WiFi'ından 'IoT-LED-Setup' ağına bağlanın (Şifre: 12345678)." />
-                <Step num={3} text="Açılan captive portal'dan ev WiFi bilgilerinizi girin." />
-                <Step num={4} text="LED'ler 3 kez yeşil yanıp söndükten sonra IP adresini buraya girin." />
-              </View>
-            )}
           </ScrollView>
         </KeyboardAvoidingView>
       </LinearGradient>
@@ -169,95 +243,165 @@ export default function ConnectScreen() {
   );
 }
 
-// ── Yardımcı bileşenler ────────────────────────────────────────────────────────
-function InfoItem({ icon, label, value }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; value: string }) {
-  return (
-    <View style={infoStyles.item}>
-      <Ionicons name={icon} size={14} color={Colors.accent} />
-      <Text style={infoStyles.label}>{label}</Text>
-      <Text style={infoStyles.value} numberOfLines={1}>{value}</Text>
-    </View>
-  );
-}
-
-function Step({ num, text }: { num: number; text: string }) {
-  return (
-    <View style={stepStyles.row}>
-      <LinearGradient colors={Gradients.accent} style={stepStyles.badge}>
-        <Text style={stepStyles.num}>{num}</Text>
-      </LinearGradient>
-      <Text style={stepStyles.text}>{text}</Text>
-    </View>
-  );
-}
-
-// ── Stiller ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root:     { flex: 1 },
-  kav:      { flex: 1 },
-  scroll:   { padding: 20, paddingTop: 60, paddingBottom: 120 },
-  header:   { marginBottom: 28, alignItems: 'center' },
-  logoRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
-  logoDot:  { width: 14, height: 14, borderRadius: 7 },
-  logoText: { fontSize: 28, fontWeight: '800', color: Colors.textPrimary, letterSpacing: -0.5 },
-  subtitle: { color: Colors.textSecondary, fontSize: 13 },
+  root: { flex: 1 },
+  kav: { flex: 1 },
+  scroll: { padding: 24, paddingBottom: 40 },
+
+  header: { marginBottom: 20, marginTop: 10 },
+  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  logoDot: { width: 12, height: 12, borderRadius: 6 },
+  logoText: { fontSize: 26, fontWeight: '800', color: Colors.text, letterSpacing: -0.5 },
+  subtitle: { fontSize: 13, color: Colors.textMuted, marginTop: 4 },
+
+  updateBanner: {
+    marginBottom: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(108,99,255,0.4)',
+    overflow: 'hidden',
+  },
+  updateBannerGrad: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  updateIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(108,99,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  updateTextWrap: { flex: 1 },
+  updateTitle: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  updateSub: { fontSize: 12, color: Colors.accent, marginTop: 2 },
 
   card: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: 16,
+    backgroundColor: Colors.cardBg,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
     padding: 20,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  cardTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(46, 204, 113, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.success, marginRight: 6 },
+  liveText: { fontSize: 11, fontWeight: '700', color: Colors.success },
+
+  searchBox: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 12,
+    padding: 14,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
-  infoCard: { backgroundColor: Colors.bgPanel },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary, marginBottom: 16 },
-  fieldLabel: { color: Colors.textSecondary, fontSize: 11, fontWeight: '600', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+  searchIconRow: { flexDirection: 'row', alignItems: 'center' },
+  searchStatusText: { fontSize: 13, color: Colors.textSecondary, flex: 1 },
+  progressBarBg: {
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 2,
+    marginTop: 10,
+    overflow: 'hidden',
+  },
+  progressBarFill: { height: '100%', backgroundColor: Colors.accent, borderRadius: 2 },
 
-  inputRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
-  input: {
-    flex: 1,
-    backgroundColor: Colors.bgDeep,
-    borderWidth: 1,
-    borderColor: Colors.border,
+  autoSearchBtn: { borderRadius: 12, overflow: 'hidden', marginBottom: 12 },
+  btnGrad: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+  },
+  btnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
+
+  errorBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(231, 76, 60, 0.1)',
     borderRadius: 10,
     padding: 12,
-    color: Colors.textPrimary,
-    fontSize: 15,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    marginBottom: 14,
+    gap: 8,
   },
-  connectBtn:     { borderRadius: 10, overflow: 'hidden' },
-  btnDisabled:    { opacity: 0.6 },
-  connectBtnGrad: { width: 48, height: 48, justifyContent: 'center', alignItems: 'center' },
+  errorText: { color: Colors.danger, fontSize: 12, flex: 1 },
 
-  errorBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, backgroundColor: 'rgba(231,76,60,0.1)', padding: 10, borderRadius: 8 },
-  errorText:  { color: Colors.danger, fontSize: 12, flex: 1 },
+  accordionToggle: { alignItems: 'center', paddingVertical: 8 },
+  accordionText: { fontSize: 12, color: Colors.textMuted, fontWeight: '600' },
 
-  hint:      { color: Colors.textMuted, fontSize: 12, lineHeight: 18 },
-  hintAccent: { color: Colors.accent, fontWeight: '600' },
+  manualBox: { marginTop: 10, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border },
+  fieldLabel: { fontSize: 11, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', marginBottom: 8 },
+  inputRow: { flexDirection: 'row', gap: 10 },
+  input: {
+    flex: 1,
+    backgroundColor: Colors.inputBg,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    color: Colors.text,
+    fontSize: 13,
+  },
+  manualBtn: {
+    backgroundColor: 'rgba(108,99,255,0.15)',
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  manualBtnText: { color: Colors.accent, fontSize: 13, fontWeight: '700' },
 
-  connectedBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20, backgroundColor: 'rgba(46,204,113,0.1)', padding: 10, borderRadius: 8 },
-  connectedDot:   { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.success },
-  connectedText:  { color: Colors.success, fontWeight: '600', fontSize: 13 },
+  connectedBox: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    gap: 8,
+  },
+  deviceRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  deviceInfoText: { fontSize: 13, color: Colors.textSecondary },
+  highlightText: { color: Colors.text, fontWeight: '700' },
 
-  infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
+  previewSection: { marginBottom: 16 },
+  previewLabel: { fontSize: 11, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', marginBottom: 8 },
 
-  actionRow:    { flexDirection: 'row', gap: 10, marginTop: 16 },
-  refreshBtn:   { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.accentSoft, borderRadius: 8, padding: 10, borderWidth: 1, borderColor: Colors.accent },
-  otaBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: 'rgba(52,152,219,0.1)', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: Colors.info },
-  disconnectBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: 'rgba(231,76,60,0.1)', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: Colors.danger },
-  refreshText:  { color: Colors.accent, fontSize: 12, fontWeight: '600' },
-});
-
-const infoStyles = StyleSheet.create({
-  item:  { flex: 1, minWidth: '45%', backgroundColor: Colors.bgDeep, borderRadius: 10, padding: 12, gap: 4, borderWidth: 1, borderColor: Colors.border },
-  label: { color: Colors.textMuted, fontSize: 10, fontWeight: '600', textTransform: 'uppercase' },
-  value: { color: Colors.textPrimary, fontSize: 13, fontWeight: '600' },
-});
-
-const stepStyles = StyleSheet.create({
-  row:   { flexDirection: 'row', gap: 12, marginBottom: 14, alignItems: 'flex-start' },
-  badge: { width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  num:   { color: '#FFF', fontSize: 12, fontWeight: '700' },
-  text:  { color: Colors.textSecondary, fontSize: 13, lineHeight: 20, flex: 1 },
+  btnRow: { flexDirection: 'row', gap: 10 },
+  reScanBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(108,99,255,0.1)',
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  reScanText: { color: Colors.accent, fontSize: 13, fontWeight: '600' },
+  disconnectBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(231, 76, 60, 0.1)',
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  disconnectText: { color: Colors.danger, fontSize: 13, fontWeight: '600' },
 });

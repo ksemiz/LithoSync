@@ -65,10 +65,23 @@ bool NetworkManager::begin() {
     if (!defaultConnected) {
         Serial.printf("[NET] AP Modu Başlatılıyor: %s / %s\n", AP_SSID, AP_PASSWORD);
 
+        // !! KRİTİK: ESP32-C3'te AP açıkken ağ taraması yapabilmek için AP+STA ikili modu gerekli
+        WiFi.mode(WIFI_AP_STA);
+        delay(200);
+
+        // Ön tarama: Ağ listesi önceden taranmazsa WiFiManager "no networks found" gösteriyor
+        Serial.println("[NET] Ön tarama yapılıyor...");
+        int n = WiFi.scanNetworks(false, true);  // false=blocking, true=hidden de dahil
+        Serial.printf("[NET] %d ağ bulundu.\n", n);
+        delay(100);
+
         _wm->setTitle("LithoSync LED Controller");
         _wm->setConfigPortalTimeout(180);    // 3 dk sonra portal kapanır
         _wm->setConnectTimeout(30);          // Bağlantı denemesi için 30 sn
         _wm->setBreakAfterConfig(true);      // Config alındıktan sonra devam et
+        _wm->setMinimumSignalQuality(-1);    // Tüm ağları göster, sinyal filtresini devre dışı bırak
+        _wm->setShowStaticFields(false);     // Gereksiz teknik alanları gizle
+        _wm->setShowDnsFields(false);        // DNS alanını gizle
 
         // İnternet yokken / Kurulum modundayken KIRMIZI YANIP SÖNME callback
         _wm->setAPCallback([](WiFiManager* myWiFiManager) {
@@ -229,7 +242,7 @@ bool NetworkManager::begin() {
         bool connected = _wm->autoConnect(AP_SSID, AP_PASSWORD);
 
         if (!connected) {
-            Serial.println("[NET] Bağlantı başarısız! Kırmızı sinyal ile yeniden başlatılıyor...");
+            Serial.println("[NET] Bağlantı başarısız! Yeniden başlatılıyor...");
             for (int i = 0; i < 5; i++) {
                 ledCtrl.setGlobalColor(CRGB::Red);
                 delay(150);
@@ -239,7 +252,23 @@ bool NetworkManager::begin() {
             ESP.restart();
             return false;
         }
+
+        // Bağlantı başarılı — YEŞİL LED sinyali ver
+        for (int i = 0; i < 3; i++) {
+            ledCtrl.setGlobalColor(CRGB(0, 200, 0));
+            delay(200);
+            ledCtrl.setGlobalColor(CRGB::Black);
+            delay(200);
+        }
+
+        // KRİTİK: WiFiManager NVS'e kaydetti. Temiz STA modunda başlamak için restart.
+        // Bu olmadan cihaz AP+STA modunda kalır ve bağlantı birkaç dk sonra kopar.
+        Serial.println("[NET] Bağlantı bilgileri kaydedildi. Temiz STA modunda başlamak için yeniden başlatılıyor...");
+        delay(1000);
+        ESP.restart();
+        return true; // Bu satıra ulaşılmaz
     }
+
 
     Serial.printf("[NET] WiFi bağlandı!\n");
     Serial.printf("[NET] SSID : %s\n", WiFi.SSID().c_str());

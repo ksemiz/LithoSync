@@ -39,7 +39,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: mobile-app
-        run: npm ci
+        run: npm install
 
       - name: Expo Prebuild (Generate Android Project)
         working-directory: mobile-app

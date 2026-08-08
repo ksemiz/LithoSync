@@ -26,6 +26,9 @@ public:
     // WiFi ayarlarını sil → AP moduna geç (fabrika ayarları)
     void resetSettings();
 
+    // Periyodik olarak bağlantının kopup kopmadığını kontrol eder
+    void tick();
+
 private:
     WiFiManager* _wm;
 };

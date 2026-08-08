@@ -269,6 +269,49 @@ namespace IoTLedController.ViewModels
                     catch { /* mDNS başarısız */ }
                 }
 
+                // ─ Deneme 3: Yerel Ağ Taraması (Subnet Scan) ─────────────────────────
+                if (foundIp == null && !ct.IsCancellationRequested)
+                {
+                    ConnectionStatus = "🔎 Yerel ağdaki IP adresleri taranıyor...";
+                    try
+                    {
+                        var tasks = new System.Collections.Generic.List<Task<string?>>();
+                        var host = Dns.GetHostEntry(Dns.GetHostName());
+                        foreach (var ip in host.AddressList)
+                        {
+                            if (ip.AddressFamily == AddressFamily.InterNetwork)
+                            {
+                                var ipBytes = ip.GetAddressBytes();
+                                string prefix = $"{ipBytes[0]}.{ipBytes[1]}.{ipBytes[2]}";
+                                
+                                for (int i = 1; i <= 254; i++)
+                                {
+                                    string testIp = $"{prefix}.{i}";
+                                    tasks.Add(Task.Run(async () =>
+                                    {
+                                        try
+                                        {
+                                            using var c = new HttpClient { Timeout = TimeSpan.FromMilliseconds(800) };
+                                            var r = await c.GetStringAsync($"http://{testIp}/status");
+                                            if (r.Contains("\"ok\":true")) return testIp;
+                                        } catch { }
+                                        return (string?)null;
+                                    }));
+                                }
+                            }
+                        }
+
+                        while (tasks.Count > 0 && foundIp == null && !ct.IsCancellationRequested)
+                        {
+                            var finished = await Task.WhenAny(tasks);
+                            tasks.Remove(finished);
+                            var res = await finished;
+                            if (res != null) foundIp = res;
+                        }
+                    }
+                    catch { }
+                }
+
                 // ─ Bulundu — bağlan ────────────────────────────────────────────────
                 if (foundIp != null && !ct.IsCancellationRequested)
                 {

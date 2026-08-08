@@ -68,9 +68,13 @@ void loop() {
             redState = !redState;
             ledCtrl.setGlobalColor(redState ? CRGB(255, 0, 0) : CRGB::Black);
         }
+        netMgr.tick(); // Kopmayı düzeltmek için tick çalıştır
         yield();
         return;
     }
+    
+    // Bağlıyken de bağlantı stabilitesi için kontrol et
+    netMgr.tick();
 
     // LED animasyon döngüsü
     ledCtrl.update();

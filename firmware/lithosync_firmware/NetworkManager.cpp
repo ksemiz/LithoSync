@@ -312,3 +312,17 @@ void NetworkManager::resetSettings() {
     delay(500);
     ESP.restart();
 }
+
+void NetworkManager::tick() {
+    static unsigned long lastCheck = 0;
+    // 15 saniyede bir bağlantı kontrolü yap
+    if (millis() - lastCheck > 15000) {
+        lastCheck = millis();
+        if (WiFi.status() != WL_CONNECTED) {
+            Serial.println("[NET] Wi-Fi bağlantısı koptu! Yeniden bağlanmaya çalışılıyor...");
+            WiFi.disconnect();
+            delay(100);
+            WiFi.reconnect();
+        }
+    }
+}

@@ -29,6 +29,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="monster.ico" />
     <!-- MVVM framework -->
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
     <!-- Ses analizi (WASAPI loopback) -->

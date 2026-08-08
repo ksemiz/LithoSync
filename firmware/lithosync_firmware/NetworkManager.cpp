@@ -70,16 +70,6 @@ bool NetworkManager::begin() {
     if (!defaultConnected) {
         Serial.printf("[NET] AP Modu Başlatılıyor: %s / %s\n", AP_SSID, AP_PASSWORD);
 
-        // !! KRİTİK: ESP32-C3'te AP açıkken ağ taraması yapabilmek için AP+STA ikili modu gerekli
-        WiFi.mode(WIFI_AP_STA);
-        delay(200);
-
-        // Ön tarama: Ağ listesi önceden taranmazsa WiFiManager "no networks found" gösteriyor
-        Serial.println("[NET] Ön tarama yapılıyor...");
-        int n = WiFi.scanNetworks(false, true);  // false=blocking, true=hidden de dahil
-        Serial.printf("[NET] %d ağ bulundu.\n", n);
-        delay(100);
-
         _wm->setTitle("LithoSync LED Controller");
         _wm->setConfigPortalTimeout(180);    // 3 dk sonra portal kapanır
         _wm->setConnectTimeout(30);          // Bağlantı denemesi için 30 sn
@@ -311,6 +301,15 @@ void NetworkManager::resetSettings() {
 }
 
 void NetworkManager::tick() {
-    // Otomatik yeniden bağlanma ESP32'nin kendi donanım/SDK seviyesinde (WiFi.setAutoReconnect(true)) yapılıyor.
-    // Burada manuel olarak WiFi.disconnect() çağırmak, Captive Portal'ı bozabilir veya kopmaları tetikleyebilir.
+    // Otomatik yeniden bağlanma (setAutoReconnect) bazen ESP32-C3'te takılı kalabiliyor.
+    // Bu yüzden periyodik olarak manuel kontrol edip reconnect tetikliyoruz.
+    static unsigned long lastCheck = 0;
+    if (millis() - lastCheck < 5000) return;
+    lastCheck = millis();
+
+    if (WiFi.status() != WL_CONNECTED && WiFi.getMode() == WIFI_STA) {
+        Serial.println("[NET] WiFi bağlantısı koptu! Yeniden bağlanmaya çalışılıyor...");
+        WiFi.disconnect();
+        WiFi.reconnect();
+    }
 }

@@ -6,6 +6,7 @@
         Title="IoT LED Controller"
         Width="1080" Height="700"
         MinWidth="900" MinHeight="600"
+        Icon="monster.ico"
         Style="{StaticResource DarkWindowStyle}"
         WindowStartupLocation="CenterScreen">
 
@@ -67,37 +68,37 @@
                 </Border>
 
                 <!-- Navigasyon öğeleri -->
-                <StackPanel DockPanel.Dock="Top">
+                <StackPanel DockPanel.Dock="Top" Margin="0,10,0,0">
                     <RadioButton Style="{StaticResource NavButton}"
                                  IsChecked="True"
                                  x:Name="NavConnect"
                                  Command="{Binding NavigateCommand}"
-                                 CommandParameter="Connect">
-                        <TextBlock><Run Text="🔗  Bağlantı"/></TextBlock>
+                                 CommandParameter="Connect" Margin="0,0,0,8" Padding="15,10">
+                        <TextBlock FontSize="14"><Run Text="🔗  Bağlantı"/></TextBlock>
                     </RadioButton>
                     <RadioButton Style="{StaticResource NavButton}"
                                  x:Name="NavLed"
                                  Command="{Binding NavigateCommand}"
-                                 CommandParameter="Led">
-                        <TextBlock><Run Text="💡  LED Kontrol"/></TextBlock>
+                                 CommandParameter="Led" Margin="0,0,0,8" Padding="15,10">
+                        <TextBlock FontSize="14"><Run Text="💡  LED Kontrol"/></TextBlock>
                     </RadioButton>
                     <RadioButton Style="{StaticResource NavButton}"
                                  x:Name="NavAmbi"
                                  Command="{Binding NavigateCommand}"
-                                 CommandParameter="Ambi">
-                        <TextBlock><Run Text="🖥️  AmbiLight"/></TextBlock>
+                                 CommandParameter="Ambi" Margin="0,0,0,8" Padding="15,10">
+                        <TextBlock FontSize="14"><Run Text="🖥️  AmbiLight"/></TextBlock>
                     </RadioButton>
                     <RadioButton Style="{StaticResource NavButton}"
                                  x:Name="NavAudio"
                                  Command="{Binding NavigateCommand}"
-                                 CommandParameter="Audio">
-                        <TextBlock><Run Text="🎵  Ses Analizi"/></TextBlock>
+                                 CommandParameter="Audio" Margin="0,0,0,8" Padding="15,10">
+                        <TextBlock FontSize="14"><Run Text="🎵  Ses Analizi"/></TextBlock>
                     </RadioButton>
                     <RadioButton Style="{StaticResource NavButton}"
                                  x:Name="NavSpotify"
                                  Command="{Binding NavigateCommand}"
-                                 CommandParameter="Spotify">
-                        <TextBlock><Run Text="🎧  Spotify"/></TextBlock>
+                                 CommandParameter="Spotify" Margin="0,0,0,8" Padding="15,10">
+                        <TextBlock FontSize="14"><Run Text="🎧  Spotify"/></TextBlock>
                     </RadioButton>
                 </StackPanel>
 

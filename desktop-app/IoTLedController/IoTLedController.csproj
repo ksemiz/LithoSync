@@ -13,9 +13,10 @@
     <UseWindowsForms>true</UseWindowsForms>
 
     <!-- ── Versiyon (Güncelleme sistemi bunu okur) ── -->
-    <Version>2.0.0</Version>
-    <AssemblyVersion>1.0.0</AssemblyVersion>
-    <FileVersion>1.0.0</FileVersion>
+    <Version>2.5.0</Version>
+    <AssemblyVersion>2.5.0</AssemblyVersion>
+    <FileVersion>2.5.0</FileVersion>
+    <ApplicationIcon>monster.ico</ApplicationIcon>
 
     <!-- ── Tek-dosya EXE çıktısı (dotnet publish -c Release -r win-x64) ── -->
     <PublishSingleFile>true</PublishSingleFile>

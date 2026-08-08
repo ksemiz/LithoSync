@@ -6,7 +6,6 @@
         Title="IoT LED Controller"
         Width="1080" Height="700"
         MinWidth="900" MinHeight="600"
-        Icon="monster.ico"
         Style="{StaticResource DarkWindowStyle}"
         WindowStartupLocation="CenterScreen">
 

@@ -27,8 +27,7 @@ bool NetworkManager::begin() {
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);             // WiFi uyku modunu kapat (bağlantı stabilite)
 
-    // TX gücünü maksimuma çıkar: uzak / zayıf sinyal seçeneklerinde bağlantıyı iyileştirir
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);
+    // TX gücünü ellemeyin, ESP32-C3'te stabilite sorunlarına yol açabilir
     delay(200);
 
     // 2. Ön tanımlı SSID ve Şifre ile bağlanmayı dene (placeholder değilse)
@@ -62,6 +61,7 @@ bool NetworkManager::begin() {
             delay(200);
         }
     } else {
+
         // Placeholder kaldıysa — WiFiManager'ın NVS'deki kayıtlı bilgileri kullanmasına izin ver
         Serial.println("[NET] Hardcoded SSID yok, WiFiManager kaydedilmiş bilgileri kullanacak.");
     }
@@ -70,20 +70,10 @@ bool NetworkManager::begin() {
     if (!defaultConnected) {
         Serial.printf("[NET] AP Modu Başlatılıyor: %s / %s\n", AP_SSID, AP_PASSWORD);
 
-        // !! KRİTİK: ESP32-C3'te AP açıkken ağ taraması yapabilmek için AP+STA ikili modu gerekli
-        WiFi.mode(WIFI_AP_STA);
-        delay(200);
-
-        // Ön tarama: Ağ listesi önceden taranmazsa WiFiManager "no networks found" gösteriyor
-        Serial.println("[NET] Ön tarama yapılıyor...");
-        int n = WiFi.scanNetworks(false, true);  // false=blocking, true=hidden de dahil
-        Serial.printf("[NET] %d ağ bulundu.\n", n);
-        delay(100);
-
         _wm->setTitle("LithoSync LED Controller");
         _wm->setConfigPortalTimeout(180);    // 3 dk sonra portal kapanır
         _wm->setConnectTimeout(30);          // Bağlantı denemesi için 30 sn
-        _wm->setBreakAfterConfig(true);      // Config alındıktan sonra devam et
+        _wm->setCleanConnect(true);          // BSSID temizle, Wi-Fi Range Extender geçişlerini kolaylaştırır
         _wm->setMinimumSignalQuality(-1);    // Tüm ağları göster, sinyal filtresini devre dışı bırak
         _wm->setShowStaticFields(false);     // Gereksiz teknik alanları gizle
         _wm->setShowDnsFields(false);        // DNS alanını gizle
@@ -114,7 +104,6 @@ bool NetworkManager::begin() {
     flex-direction: column;
     align-items: center;
   }
-  /* ─ Marka barı ─ */
   .ls-brand {
     width: 100%;
     background: rgba(13,14,26,0.95);
@@ -139,12 +128,7 @@ bool NetworkManager::begin() {
     -webkit-text-fill-color: transparent;
     letter-spacing: -0.3px;
   }
-  .ls-brand-sub {
-    font-size: 12px;
-    color: #7B7D99;
-    margin-left: auto;
-  }
-  /* ─ Ana kart ─ */
+  .ls-brand-sub { font-size: 12px; color: #7B7D99; margin-left: auto; }
   .ls-card {
     background: rgba(19,20,31,0.9);
     border: 1px solid rgba(255,255,255,0.07);
@@ -155,153 +139,67 @@ bool NetworkManager::begin() {
     box-shadow: 0 20px 60px rgba(0,0,0,0.5);
     margin-bottom: 16px;
   }
-  /* ─ Adım rehberi ─ */
-  .ls-steps {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    margin-bottom: 24px;
-  }
-  .ls-step {
-    display: flex;
-    align-items: flex-start;
-    gap: 14px;
-  }
+  .ls-steps { display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px; }
+  .ls-step { display: flex; align-items: flex-start; gap: 14px; }
   .ls-step-num {
     width: 30px; height: 30px;
     border-radius: 50%;
     background: linear-gradient(135deg, #6C63FF, #4A44B0);
     display: flex; align-items: center; justify-content: center;
     font-size: 13px; font-weight: 700;
-    flex-shrink: 0;
-    color: #fff;
+    flex-shrink: 0; color: #fff;
     box-shadow: 0 4px 12px rgba(108,99,255,0.4);
   }
-  .ls-step-text {
-    font-size: 14px;
-    color: #C8C9D8;
-    line-height: 1.5;
-    padding-top: 4px;
-  }
+  .ls-step-text { font-size: 14px; color: #C8C9D8; line-height: 1.5; padding-top: 4px; }
   .ls-step-text strong { color: #E8E9F3; }
-  /* ─ Divider ─ */
-  .ls-divider {
-    border: none;
-    border-top: 1px solid rgba(255,255,255,0.07);
-    margin: 20px 0;
-  }
-  /* ─ Başlık ─ */
-  .ls-title {
-    font-size: 17px;
-    font-weight: 700;
-    color: #E8E9F3;
-    margin-bottom: 6px;
-  }
-  .ls-subtitle {
-    font-size: 13px;
-    color: #7B7D99;
-    margin-bottom: 20px;
-    line-height: 1.5;
-  }
-  /* ─ Form elemanları ─ */
-  .ls-label {
-    display: block;
-    font-size: 11px;
-    font-weight: 700;
-    color: #7B7D99;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    margin-bottom: 8px;
-  }
-  input[type='text'],
-  input[type='password'],
-  select {
-    background: #0E0F1C !important;
-    color: #E8E9F3 !important;
+  .ls-title { font-size: 17px; font-weight: 700; color: #E8E9F3; margin-bottom: 6px; }
+  .ls-subtitle { font-size: 13px; color: #7B7D99; margin-bottom: 20px; line-height: 1.5; }
+  input[type='text'], input[type='password'], select {
+    background: #0E0F1C !important; color: #E8E9F3 !important;
     border: 1.5px solid rgba(255,255,255,0.1) !important;
-    border-radius: 12px !important;
-    padding: 14px 16px !important;
-    margin-bottom: 14px !important;
-    width: 100% !important;
-    font-size: 15px !important;
-    font-family: inherit !important;
-    transition: border-color 0.2s !important;
-    outline: none !important;
+    border-radius: 12px !important; padding: 14px 16px !important;
+    margin-bottom: 14px !important; width: 100% !important;
+    font-size: 15px !important; font-family: inherit !important;
+    transition: border-color 0.2s !important; outline: none !important;
   }
-  input[type='text']:focus,
-  input[type='password']:focus,
-  select:focus {
+  input[type='text']:focus, input[type='password']:focus, select:focus {
     border-color: #6C63FF !important;
   }
   select option { background: #13141F; }
-  /* ─ Buton ─ */
-  button,
-  input[type='submit'] {
+  button, input[type='submit'] {
     background: linear-gradient(135deg, #6C63FF 0%, #4A44B0 100%) !important;
-    color: #FFFFFF !important;
-    border: none !important;
-    border-radius: 12px !important;
-    font-weight: 700 !important;
-    font-size: 16px !important;
-    font-family: inherit !important;
-    padding: 16px !important;
-    width: 100% !important;
-    cursor: pointer !important;
-    margin-top: 4px !important;
+    color: #FFFFFF !important; border: none !important;
+    border-radius: 12px !important; font-weight: 700 !important;
+    font-size: 16px !important; font-family: inherit !important;
+    padding: 16px !important; width: 100% !important;
+    cursor: pointer !important; margin-top: 4px !important;
     box-shadow: 0 8px 24px rgba(108,99,255,0.4) !important;
-    transition: opacity 0.2s, transform 0.1s !important;
   }
-  button:active, input[type='submit']:active {
-    opacity: 0.85 !important;
-    transform: scale(0.98) !important;
-  }
-  /* WiFiManager kanallar listesi (çember okı) */
   a { color: #6C63FF !important; text-decoration: none; }
-  /* WiFiManager varsayılan kılavuz metin */
   div.c { display: none !important; }
-  div.q {
-    border-bottom: 1px solid rgba(255,255,255,0.06) !important;
-    padding: 12px 0 !important;
-    font-size: 14px !important;
-    color: #C8C9D8 !important;
-  }
+  div.q { border-bottom: 1px solid rgba(255,255,255,0.06) !important; padding: 12px 0 !important; font-size: 14px !important; color: #C8C9D8 !important; }
   div.q b { color: #9D98FF !important; }
-  /* WiFiManager sinyal güç kutusu */
-  .q.q-0:before,.q.q-1:before,.q.q-2:before,.q.q-3:before,.q.q-4:before {
-    color: #6C63FF !important;
-  }
-  /* Bilgi kutusu */
   .ls-info {
     background: rgba(108,99,255,0.08);
     border: 1px solid rgba(108,99,255,0.2);
-    border-radius: 12px;
-    padding: 14px 16px;
-    font-size: 13px;
-    color: #9D98FF;
-    line-height: 1.6;
-    margin-top: 16px;
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
+    border-radius: 12px; padding: 14px 16px;
+    font-size: 13px; color: #9D98FF; line-height: 1.6; margin-top: 16px;
+    display: flex; align-items: flex-start; gap: 10px;
   }
   .ls-info-icon { font-size: 18px; flex-shrink: 0; }
 </style>
 <script>
-  // WiFiManager sayfa başlığını güncellemek için
   document.addEventListener('DOMContentLoaded', function() {
-    // H1 başlığını değiştir
     var h1 = document.querySelector('h1');
     if (h1) h1.textContent = 'Wi-Fi Kurulumu';
     var h2 = document.querySelector('h2');
     if (h2) h2.textContent = 'Cihazınızı ev ağınıza bağlayın';
-    // Submit butonunu güncelleyin
     var btn = document.querySelector('input[type="submit"]');
     if (btn) btn.value = 'Bağlantıyı Kaydet';
-    // Ağ listesi başlığı
     var labels = document.querySelectorAll('label');
     labels.forEach(function(l) {
       if (l.textContent.indexOf('SSID') !== -1) l.textContent = 'Wi-Fi Ağınız';
-      if (l.textContent.indexOf('Password') !== -1 || l.textContent.indexOf('Şifre') !== -1) l.textContent = 'Wi-Fi Şifreniz';
+      if (l.textContent.indexOf('Password') !== -1) l.textContent = 'Wi-Fi Şifreniz';
     });
   });
 </script>
@@ -325,17 +223,16 @@ bool NetworkManager::begin() {
       </div>
       <div class="ls-step">
         <div class="ls-step-num">3</div>
-        <div class="ls-step-text"><strong>"Bağlantıyı Kaydet"</strong> butonuna basın ve tamamlanmasını bekleyin</div>
+        <div class="ls-step-text"><strong>"Bağlantıyı Kaydet"</strong> butonuna basın</div>
       </div>
     </div>
     <div class="ls-info">
       <span class="ls-info-icon">✨</span>
-      <span>Bağlantı kurulduktan sonra LED’ler <strong style="color:#2ECC71">yeşil</strong> yanıp sönecek ve cihaz hazır olacaktır.</span>
+      <span>Bağlantı kurulduktan sonra LED'ler <strong style="color:#2ECC71">yeşil</strong> yanıp sönecek ve cihaz hazır olacaktır.</span>
     </div>
   </div>
 </div>
 )rawhtml");
-
 
         bool connected = _wm->autoConnect(AP_SSID, AP_PASSWORD);
 
@@ -401,4 +298,18 @@ void NetworkManager::resetSettings() {
     _wm->resetSettings();
     delay(500);
     ESP.restart();
+}
+
+void NetworkManager::tick() {
+    // Otomatik yeniden bağlanma (setAutoReconnect) bazen ESP32-C3'te takılı kalabiliyor.
+    // Bu yüzden periyodik olarak manuel kontrol edip reconnect tetikliyoruz.
+    static unsigned long lastCheck = 0;
+    if (millis() - lastCheck < 5000) return;
+    lastCheck = millis();
+
+    if (WiFi.status() != WL_CONNECTED && WiFi.getMode() == WIFI_STA) {
+        Serial.println("[NET] WiFi bağlantısı koptu! Yeniden bağlanmaya çalışılıyor...");
+        WiFi.disconnect();
+        WiFi.reconnect();
+    }
 }

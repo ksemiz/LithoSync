@@ -68,7 +68,7 @@ public class UpdaterService
 
             if (Version.TryParse(latestStr,  out var latest) &&
                 Version.TryParse(currentStr, out var current) &&
-                latest > current)
+                latest >= current) // >= ile kullanıcının aynı versiyonla bile OTA'yı test etmesine izin ver
             {
                 return release;
             }

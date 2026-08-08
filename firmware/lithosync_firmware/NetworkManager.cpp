@@ -27,8 +27,7 @@ bool NetworkManager::begin() {
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);             // WiFi uyku modunu kapat (bağlantı stabilite)
 
-    // TX gücünü maksimuma çıkar: uzak / zayıf sinyal durumunda bağlantıyı iyileştirir
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);
+    // TX gücünü ellemeyin, ESP32-C3'te stabilite sorunlarına yol açabilir
     delay(200);
 
     // 2. Ön tanımlı SSID ve Şifre ile bağlanmayı dene (placeholder değilse)
@@ -312,15 +311,6 @@ void NetworkManager::resetSettings() {
 }
 
 void NetworkManager::tick() {
-    static unsigned long lastCheck = 0;
-    // 15 saniyede bir bağlantı kontrolü yap
-    if (millis() - lastCheck > 15000) {
-        lastCheck = millis();
-        if (WiFi.status() != WL_CONNECTED) {
-            Serial.println("[NET] Wi-Fi bağlantısı koptu! Yeniden bağlanmaya çalışılıyor...");
-            WiFi.disconnect();
-            delay(100);
-            WiFi.reconnect();
-        }
-    }
+    // Otomatik yeniden bağlanma ESP32'nin kendi donanım/SDK seviyesinde (WiFi.setAutoReconnect(true)) yapılıyor.
+    // Burada manuel olarak WiFi.disconnect() çağırmak, Captive Portal'ı bozabilir veya kopmaları tetikleyebilir.
 }

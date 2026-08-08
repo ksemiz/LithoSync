@@ -17,6 +17,9 @@ public:
     // WiFi kurulum — Captive Portal ile otomatik bağlantı
     bool begin();
 
+    // Periyodik işlemler (bağlantı kontrolü vb.)
+    void tick();
+
     // ── Durum ─────────────────────────────────────────────────────────────────
     bool   isConnected()  const;
     String getIPAddress() const;

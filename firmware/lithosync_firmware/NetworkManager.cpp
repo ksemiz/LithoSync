@@ -29,8 +29,6 @@ bool NetworkManager::begin() {
 
     // TX gücünü maksimuma çıkar: uzak / zayıf sinyal durumunda bağlantıyı iyileştirir
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
-    WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
-    WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
     delay(200);
 
     // 2. Ön tanımlı SSID ve Şifre ile bağlanmayı dene (placeholder değilse)
